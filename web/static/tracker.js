@@ -1,6 +1,11 @@
 (function () {
 	"use strict";
 
+	if (window.__gnatInitialized) {
+		return;
+	}
+	window.__gnatInitialized = true;
+
 	var scriptTag = document.currentScript;
 	var siteKey = scriptTag ? scriptTag.getAttribute("data-site-key") : null;
 	var endpoint = scriptTag ? scriptTag.src.replace(/\/tracker\.js.*$/, "/api/event") : "/api/event";
@@ -10,34 +15,16 @@
 		return;
 	}
 
-	function send(eventName, properties) {
-	var payload = {
-		event_name: eventName,
-		distinct_id: getDistinctId(),
-		properties: properties || {},
-		timestamp: new Date().toISOString()
-	};
+	var INACTIVITY_THRESHOLD = 30000; // 30s idle = no longer "active"
+	var currentPath = location.pathname;
+	var activeTime = 0;
+	var lastActivityTime = Date.now();
+	var isActive = true;
+	var inactivityTimer = null;
+	var pageLeft = false;
 
-	console.log("gnat: sending event to", endpoint, payload);
+	// --- identity ---
 
-	fetch(endpoint, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			"X-API-Key": siteKey
-		},
-		body: JSON.stringify(payload),
-		keepalive: true
-	}).then(function (res) {
-		console.log("gnat: response status", res.status);
-	}).catch(function (err) {
-		console.error("gnat: fetch failed", err);
-	});
-}
-
-	// distinct_id: a simple anonymous per-browser identifier stored in
-	// localStorage. No cookies, no cross-site tracking, matches the
-	// privacy-first positioning.
 	function getDistinctId() {
 		var key = "_gnat_id";
 		try {
@@ -48,8 +35,6 @@
 			}
 			return id;
 		} catch (e) {
-			// localStorage unavailable (private browsing etc), fall back to
-			// a per-load id, still better than nothing
 			return generateId();
 		}
 	}
@@ -62,6 +47,82 @@
 		});
 	}
 
+	var distinctId = getDistinctId();
+
+	// --- sending ---
+
+	// useBeacon: sendBeacon survives page unload in a way fetch is not
+	// guaranteed to. Used for pageview_end/leave. Falls back to fetch with
+	// keepalive if sendBeacon is unavailable or the browser rejects it.
+	// Note: sendBeacon cannot carry custom headers, so for beacon sends the
+	// API key travels in the JSON body instead of the X-API-Key header. The
+	// server needs to accept the key from either place.
+	function send(eventName, properties, useBeacon) {
+		var payload = {
+			event_name: eventName,
+			distinct_id: distinctId,
+			properties: properties || {},
+			timestamp: new Date().toISOString()
+		};
+
+		if (useBeacon && navigator.sendBeacon) {
+			var beaconPayload = JSON.parse(JSON.stringify(payload));
+			beaconPayload.api_key = siteKey;
+			var blob = new Blob([JSON.stringify(beaconPayload)], { type: "text/plain" });
+			var sent = navigator.sendBeacon(endpoint, blob);
+			if (sent) return;
+			// fall through to fetch if the beacon was rejected
+		}
+
+		fetch(endpoint, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"X-API-Key": siteKey
+			},
+			body: JSON.stringify(payload),
+			keepalive: true
+		}).catch(function () {
+			// silently drop network errors, analytics should never break the page
+		});
+	}
+
+	// --- active time tracking ---
+	// Tracks real engaged time (mouse move, scroll, click, keypress, touch),
+	// not just "tab was open." A background tab does not accumulate time.
+
+	function updateActiveTime() {
+		if (isActive && document.visibilityState === "visible") {
+			var now = Date.now();
+			var delta = now - lastActivityTime;
+			if (delta > 0 && delta < INACTIVITY_THRESHOLD) {
+				activeTime += delta;
+			}
+			lastActivityTime = now;
+		}
+	}
+
+	function markActive() {
+		var now = Date.now();
+		if (!isActive) {
+			isActive = true;
+			lastActivityTime = now;
+		} else {
+			updateActiveTime();
+		}
+		clearTimeout(inactivityTimer);
+		inactivityTimer = setTimeout(markInactive, INACTIVITY_THRESHOLD);
+	}
+
+	function markInactive() {
+		if (isActive) {
+			updateActiveTime();
+			isActive = false;
+		}
+	}
+
+	// --- pageview lifecycle ---
+
 	function trackPageview() {
 		send("pageview", {
 			path: location.pathname,
@@ -69,28 +130,76 @@
 		});
 	}
 
-	// --- automatic pageview tracking, including SPA route changes ---
+	function trackPageviewEnd() {
+		updateActiveTime();
+		var seconds = Math.round(activeTime / 1000);
+		send("pageview_end", {
+			path: currentPath,
+			timespent: seconds
+		}, true);
+	}
+
+	function handleRouteChange() {
+		var newPath = location.pathname;
+		if (newPath === currentPath) return;
+
+		trackPageviewEnd();
+
+		currentPath = newPath;
+		activeTime = 0;
+		lastActivityTime = Date.now();
+		isActive = true;
+		pageLeft = false;
+
+		// let location.href settle before reading it again for the new pageview
+		setTimeout(trackPageview, 0);
+	}
+
+	function handlePageLeave() {
+		if (pageLeft) return;
+		pageLeft = true;
+		trackPageviewEnd();
+	}
+
+	// --- wire up ---
 
 	trackPageview();
 
-	// SPA frameworks (React Router, Next.js, Vue Router, etc.) navigate via
-	// history.pushState without a full page load, so a plain "load" listener
-	// only ever fires once. Patch pushState/replaceState to also notify us.
+	var activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click"];
+	activityEvents.forEach(function (evt) {
+		document.addEventListener(evt, markActive, { passive: true });
+	});
+
+	document.addEventListener("visibilitychange", function () {
+		if (document.visibilityState === "hidden") {
+			markInactive();
+		} else {
+			markActive();
+		}
+	});
+
+	window.addEventListener("beforeunload", handlePageLeave, { capture: true });
+	window.addEventListener("pagehide", handlePageLeave, { passive: true });
+
+	inactivityTimer = setTimeout(markInactive, INACTIVITY_THRESHOLD);
+
+	// SPA route changes: patch pushState/replaceState since browsers fire
+	// no native event for them, plus popstate for back/forward.
 	var originalPushState = history.pushState;
 	history.pushState = function () {
 		originalPushState.apply(history, arguments);
-		trackPageview();
+		handleRouteChange();
 	};
 
 	var originalReplaceState = history.replaceState;
 	history.replaceState = function () {
 		originalReplaceState.apply(history, arguments);
-		trackPageview();
+		handleRouteChange();
 	};
 
-	window.addEventListener("popstate", trackPageview);
+	window.addEventListener("popstate", handleRouteChange, { passive: true });
 
-	// --- public API for custom events ---
+	// --- public API ---
 
 	window.gnat = {
 		track: function (eventName, properties) {

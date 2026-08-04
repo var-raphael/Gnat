@@ -2,34 +2,32 @@ package ingest
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/var-raphael/gnat/internal/geo"
 	"github.com/var-raphael/gnat/internal/storage"
 )
 
-// eventPayload is the shape POSTed to /api/event. Properties is left as
-// json.RawMessage so arbitrary caller-defined fields pass through without
-// needing a fixed schema, then get stored as a JSON string.
 type eventPayload struct {
 	EventName  string          `json:"event_name"`
 	DistinctID string          `json:"distinct_id"`
 	Properties json.RawMessage `json:"properties"`
 	Timestamp  *time.Time      `json:"timestamp"`
+	APIKey     string          `json:"api_key,omitempty"`
 }
 
-// Handler returns the http.HandlerFunc for /api/event. It needs the db
-// connection and the configured API key to authenticate requests.
-func Handler(db *gorm.DB, apiKey string) http.HandlerFunc {
+// Handler returns the http.HandlerFunc for /api/event.
+func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// CORS: wide open on purpose. This is a write-only endpoint, the
-		// API key is what controls data ownership, not request origin.
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
-	
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -40,14 +38,14 @@ func Handler(db *gorm.DB, apiKey string) http.HandlerFunc {
 			return
 		}
 
-		if !authorized(r, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
 		var payload eventPayload
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "invalid json body", http.StatusBadRequest)
+			return
+		}
+
+		if !authorized(r, payload.APIKey, apiKey) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -70,14 +68,19 @@ func Handler(db *gorm.DB, apiKey string) http.HandlerFunc {
 			propsStr = string(payload.Properties)
 		}
 
+		ip := clientIP(r)
+
+		// VisitorHash is cheap (no network call) so it's computed
+		// synchronously, unlike geo which requires an external request.
+		// The raw ip local variable is used here and for geo below, then
+		// goes out of scope; it is never written to the database.
 		event := storage.Event{
-			// SiteID is hardcoded to 1 for now, single-site mode. Multi-site
-			// resolution (via api key -> site lookup) comes with the paid tier.
-			SiteID:     1,
-			EventName:  payload.EventName,
-			DistinctID: payload.DistinctID,
-			Properties: propsStr,
-			Timestamp:  ts,
+			SiteID:      1,
+			EventName:   payload.EventName,
+			DistinctID:  payload.DistinctID,
+			Properties:  propsStr,
+			VisitorHash: hashVisitorIP(ip),
+			Timestamp:   ts,
 		}
 
 		if err := db.Create(&event).Error; err != nil {
@@ -86,12 +89,40 @@ func Handler(db *gorm.DB, apiKey string) http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusAccepted)
+
+		// Geo enrichment happens after the response is already sent, so
+		// ingestion latency never depends on a third-party service.
+		if geoClient != nil {
+			eventID := event.ID
+			go enrichCountry(db, geoClient, eventID, ip)
+		}
 	}
 }
 
-// authorized checks the API key via the Authorization header
-// ("Bearer <key>") or an X-API-Key header, either is accepted.
-func authorized(r *http.Request, apiKey string) bool {
+func enrichCountry(db *gorm.DB, geoClient *geo.Client, eventID uint, ip string) {
+	country := geoClient.Lookup(ip)
+	if country == "" {
+		return
+	}
+	db.Model(&storage.Event{}).Where("id = ?", eventID).Update("country", country)
+}
+
+// clientIP extracts the real visitor IP, preferring X-Forwarded-For (set
+// by a reverse proxy like Nginx/Caddy in front of Gnat) over RemoteAddr.
+func clientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.Split(fwd, ",")
+		return strings.TrimSpace(parts[0])
+	}
+
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func authorized(r *http.Request, bodyKey string, apiKey string) bool {
 	if key := r.Header.Get("X-API-Key"); key != "" {
 		return key == apiKey
 	}
@@ -99,6 +130,9 @@ func authorized(r *http.Request, apiKey string) bool {
 	const prefix = "Bearer "
 	if len(auth) > len(prefix) && auth[:len(prefix)] == prefix {
 		return auth[len(prefix):] == apiKey
+	}
+	if bodyKey != "" {
+		return bodyKey == apiKey
 	}
 	return false
 }

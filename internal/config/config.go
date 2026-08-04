@@ -44,9 +44,11 @@ type Config struct {
 	Updates   UpdatesConfig   `yaml:"updates"`
 	AI        AIConfig        `yaml:"ai"`
 
-	// aiAPIKey is deliberately not yaml-tagged. It is never read from or
-	// written to the config file, only ever set from GNAT_AI_API_KEY.
-	aiAPIKey string
+	// aiAPIKey and ipinfoToken are deliberately not yaml-tagged. They are
+	// never read from or written to the config file, only ever set from
+	// their respective environment variables.
+	aiAPIKey    string
+	ipinfoToken string
 }
 
 // Load reads and parses the YAML config file at path, applies env var
@@ -114,6 +116,9 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("GNAT_AI_API_KEY"); v != "" {
 		c.aiAPIKey = v
 	}
+	if v := os.Getenv("GNAT_IPINFO_TOKEN"); v != "" {
+		c.ipinfoToken = v
+	}
 }
 
 func (c *Config) validate() error {
@@ -137,4 +142,10 @@ func (c *Config) validate() error {
 // GNAT_AI_API_KEY environment variable, never from the config file.
 func (c *Config) AIAPIKey() string {
 	return c.aiAPIKey
+}
+
+// IPInfoToken returns the IPinfo Lite API token used for geo enrichment.
+// Sourced only from GNAT_IPINFO_TOKEN. If empty, geo lookups are disabled.
+func (c *Config) IPInfoToken() string {
+	return c.ipinfoToken
 }

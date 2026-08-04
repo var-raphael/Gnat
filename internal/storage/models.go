@@ -14,16 +14,29 @@ type Site struct {
 	CreatedAt time.Time
 }
 
-// Event is a single raw ingested event — either an automatic pageview
+// Event is a single raw ingested event, either an automatic pageview
 // or a custom event fired via track().
+//
+// Country is populated asynchronously after the initial write, via a
+// background geo lookup keyed off the request IP. The IP itself is never
+// stored, only held in memory for the duration of that one lookup.
+//
+// VisitorHash is a daily-salted, one-way hash of the request IP, used as
+// a secondary signal for unique-visitor counts that is resistant to
+// someone simply clearing localStorage to inflate numbers. It rotates
+// daily, so it cannot be used to correlate the same visitor across days.
+// DistinctID (localStorage-based) remains the primary identity signal for
+// session-level tracking like funnels and paths.
 type Event struct {
-	ID         uint   `gorm:"primaryKey"`
-	SiteID     uint   `gorm:"index;not null"`
-	EventName  string `gorm:"index;not null"` // e.g. "pageview", "signup_completed"
-	DistinctID string `gorm:"index;not null"` // anonymous visitor identifier
-	Properties string `gorm:"type:text"`       // JSON-encoded arbitrary props
-	Timestamp  time.Time `gorm:"index;not null"`
-	CreatedAt  time.Time
+	ID          uint      `gorm:"primaryKey"`
+	SiteID      uint      `gorm:"index;not null"`
+	EventName   string    `gorm:"index;not null"`
+	DistinctID  string    `gorm:"index;not null"`
+	Properties  string    `gorm:"type:text"`
+	Country     string    `gorm:"index"`
+	VisitorHash string    `gorm:"index"`
+	Timestamp   time.Time `gorm:"index;not null"`
+	CreatedAt   time.Time
 }
 
 // PathSummary stores precomputed multi-branch path analysis results,
@@ -32,13 +45,12 @@ type PathSummary struct {
 	ID          uint   `gorm:"primaryKey"`
 	SiteID      uint   `gorm:"index;not null"`
 	AnchorEvent string `gorm:"index;not null"`
-	Path        string `gorm:"type:text;not null"` // normalized, JSON-encoded step list
+	Path        string `gorm:"type:text;not null"`
 	Count       int    `gorm:"not null"`
 	ComputedAt  time.Time
 }
 
-// AutoMigrate runs GORM's schema migration for all models. Called once
-// at startup after the DB connection is established.
+// AutoMigrate runs GORM's schema migration for all models.
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(&Site{}, &Event{}, &PathSummary{})
 }
