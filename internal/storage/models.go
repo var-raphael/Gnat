@@ -25,8 +25,10 @@ type Site struct {
 // a secondary signal for unique-visitor counts that is resistant to
 // someone simply clearing localStorage to inflate numbers. It rotates
 // daily, so it cannot be used to correlate the same visitor across days.
-// DistinctID (localStorage-based) remains the primary identity signal for
-// session-level tracking like funnels and paths.
+//
+// Browser, OS, and DeviceType are parsed server-side from the request's
+// User-Agent header at ingestion time. No client-side JS is needed for
+// this, the header is already present on every HTTP request.
 type Event struct {
 	ID          uint      `gorm:"primaryKey"`
 	SiteID      uint      `gorm:"index;not null"`
@@ -35,6 +37,9 @@ type Event struct {
 	Properties  string    `gorm:"type:text"`
 	Country     string    `gorm:"index"`
 	VisitorHash string    `gorm:"index"`
+	Browser     string    `gorm:"index"`
+	OS          string    `gorm:"index"`
+	DeviceType  string    `gorm:"index"` // "desktop", "mobile", "tablet", "bot", "unknown"
 	Timestamp   time.Time `gorm:"index;not null"`
 	CreatedAt   time.Time
 }

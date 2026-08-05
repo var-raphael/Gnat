@@ -51,6 +51,10 @@ func main() {
 	mux.HandleFunc("/api/event", ingest.Handler(db, cfg.APIKey, geoClient))
 	mux.HandleFunc("/api/stats/pageviews", query.PageviewsHandler(db, cfg.APIKey))
 	mux.HandleFunc("/api/stats/events", query.EventsHandler(db, cfg.APIKey))
+	mux.HandleFunc("/api/stats/referrers", query.ReferrersHandler(db, cfg.APIKey))
+	mux.HandleFunc("/api/stats/funnels", query.FunnelsHandler(db, cfg.APIKey))
+	mux.HandleFunc("/api/stats/paths", query.PathsHandler(db, cfg.APIKey))
+	mux.HandleFunc("/api/stats/retention", query.RetentionHandler(db, cfg.APIKey))
 
 	mux.HandleFunc("/tracker.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")

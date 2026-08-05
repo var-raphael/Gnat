@@ -69,17 +69,17 @@ func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc
 		}
 
 		ip := clientIP(r)
+		ua := parseUserAgent(r.UserAgent())
 
-		// VisitorHash is cheap (no network call) so it's computed
-		// synchronously, unlike geo which requires an external request.
-		// The raw ip local variable is used here and for geo below, then
-		// goes out of scope; it is never written to the database.
 		event := storage.Event{
 			SiteID:      1,
 			EventName:   payload.EventName,
 			DistinctID:  payload.DistinctID,
 			Properties:  propsStr,
 			VisitorHash: hashVisitorIP(ip),
+			Browser:     ua.Browser,
+			OS:          ua.OS,
+			DeviceType:  ua.DeviceType,
 			Timestamp:   ts,
 		}
 
@@ -90,8 +90,6 @@ func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc
 
 		w.WriteHeader(http.StatusAccepted)
 
-		// Geo enrichment happens after the response is already sent, so
-		// ingestion latency never depends on a third-party service.
 		if geoClient != nil {
 			eventID := event.ID
 			go enrichCountry(db, geoClient, eventID, ip)
@@ -107,19 +105,38 @@ func enrichCountry(db *gorm.DB, geoClient *geo.Client, eventID uint, ip string) 
 	db.Model(&storage.Event{}).Where("id = ?", eventID).Update("country", country)
 }
 
+const devFallbackIP = "8.8.8.8"
+
 // clientIP extracts the real visitor IP, preferring X-Forwarded-For (set
 // by a reverse proxy like Nginx/Caddy in front of Gnat) over RemoteAddr.
+// Falls back to devFallbackIP only for loopback/private addresses.
 func clientIP(r *http.Request) string {
+	var ip string
+
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		parts := strings.Split(fwd, ",")
-		return strings.TrimSpace(parts[0])
+		ip = strings.TrimSpace(parts[0])
+	} else {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		} else {
+			ip = host
+		}
 	}
 
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	if isLoopbackOrPrivate(ip) {
+		return devFallbackIP
 	}
-	return host
+	return ip
+}
+
+func isLoopbackOrPrivate(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return true
+	}
+	return parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsUnspecified()
 }
 
 func authorized(r *http.Request, bodyKey string, apiKey string) bool {
