@@ -1,0 +1,11 @@
+{
+  "_comment": "Tier is a coarse proxy for ad/subscription revenue value per visitor, common in analytics dashboards. Tier 1 = US/UK/EU/CA/AU/etc, Tier 2 = upper-middle markets, Tier 3 = everyone else. This is a placeholder mapping for the mock; backend should own the source of truth.",
+  "tiers": {
+    "US": 1, "GB": 1, "CA": 1, "AU": 1, "DE": 1, "FR": 1, "NL": 1, "SE": 1,
+    "NO": 1, "DK": 1, "CH": 1, "JP": 1, "SG": 1, "NZ": 1, "IE": 1, "FI": 1,
+    "BR": 2, "MX": 2, "SA": 2, "AE": 2, "KW": 2, "ZA": 2, "PL": 2, "TR": 2,
+    "AR": 2, "CL": 2, "RO": 2, "GR": 2, "PT": 2,
+    "NG": 3, "GH": 3, "UG": 3, "IN": 3, "PK": 3, "VN": 3, "MW": 3, "KE": 3,
+    "BD": 3, "PH": 3, "ID": 3, "EG": 3
+  }
+}

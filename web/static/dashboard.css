@@ -1,0 +1,1759 @@
+/* Gnat dashboard — design tokens
+   Dark by default, matches the logo's charcoal/teal identity.
+   Text-forward, dense (GoatCounter-style), but with real depth: layered
+   surfaces, soft shadows, and a warm secondary accent instead of a flat
+   single-gray-scale palette. The base is a blue-shifted near-black
+   (not literal #000) so panels have somewhere to sit relative to it. */
+
+:root {
+	--ink: #0a0d10;
+	--ink-raised: #14181c;
+	--ink-raised-2: #191e23;
+	--paper: #ece9e2;
+	--signal: #2dd4bf;
+	--signal-dim: rgba(45, 212, 191, 0.55);
+	--signal-faint: rgba(45, 212, 191, 0.12);
+	--signal-glow: rgba(45, 212, 191, 0.35);
+	--amber: #f0b86e;
+	--amber-faint: rgba(240, 184, 110, 0.12);
+	--line: #23282e;
+	--line-soft: #1b1f24;
+	--muted: #8a9198;
+	--danger: #d97f70;
+
+	--bg: var(--ink);
+	--bg-raised: var(--ink-raised);
+	--bg-raised-2: var(--ink-raised-2);
+	--fg: var(--paper);
+	--fg-muted: var(--muted);
+	--border: var(--line);
+	--border-soft: var(--line-soft);
+	--accent: var(--signal);
+	--accent-dim: var(--signal-dim);
+	--accent-faint: var(--signal-faint);
+	--accent-glow: var(--signal-glow);
+	--accent-2: var(--amber);
+	--accent-2-faint: var(--amber-faint);
+
+	/* Panel surface: a faint top-lit gradient plus a soft ambient shadow,
+	   so cards read as slightly raised material rather than flat divs
+	   separated only by borders. */
+	--panel-bg: linear-gradient(180deg, var(--bg-raised-2) 0%, var(--bg-raised) 100%);
+	--panel-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.03) inset, 0 12px 24px -12px rgba(0, 0, 0, 0.55), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+	--panel-shadow-hover: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 16px 32px -14px rgba(0, 0, 0, 0.6), 0 4px 10px -3px rgba(0, 0, 0, 0.45);
+
+	--font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	--font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+	--font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+}
+
+[data-theme="light"] {
+	--bg: #f3f1ea;
+	--bg-raised: #ffffff;
+	--bg-raised-2: #ffffff;
+	--fg: #191510;
+	--fg-muted: #6b6459;
+	--border: #e2ddd0;
+	--border-soft: #ece7db;
+	--accent: #0f9c8c;
+	--accent-dim: rgba(15, 156, 140, 0.5);
+	--accent-faint: rgba(15, 156, 140, 0.1);
+	--accent-glow: rgba(15, 156, 140, 0.25);
+	--accent-2: #c17d2e;
+	--accent-2-faint: rgba(193, 125, 46, 0.1);
+	--panel-bg: linear-gradient(180deg, #ffffff 0%, #fbfaf6 100%);
+	--panel-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.6) inset, 0 10px 24px -14px rgba(35, 25, 15, 0.18), 0 2px 6px -2px rgba(35, 25, 15, 0.08);
+	--panel-shadow-hover: 0 1px 0 0 rgba(255, 255, 255, 0.7) inset, 0 16px 32px -16px rgba(35, 25, 15, 0.22), 0 4px 10px -3px rgba(35, 25, 15, 0.1);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+/* Disables the browser's default double-tap-to-zoom gesture everywhere.
+   Without this, quickly tapping a tab (Overview/Funnels/Retention) can
+   register as a double-tap if a second tap lands nearby shortly after —
+   and mobile Chrome's default double-tap gesture zooms into whichever
+   block-level element the tap landed on (typically the nearest card-like
+   ancestor, here a .gnat-panel), scaling up everything inside it,
+   including headings like "Visitors Over Time" / "Traffic Sources".
+   Setting touch-action only on <html> was not sufficient to suppress this
+   in Chrome for Android when the tap lands on a nested block element —
+   touch-action has to be set on the elements actually receiving the tap
+   for the browser to skip its double-tap-zoom heuristic on them. Applying
+   it universally via the wildcard selector (in addition to html/body)
+   ensures every tappable surface, including .gnat-panel and its children,
+   is covered. pinch-zoom for accessibility is untouched — only the
+   double-tap shortcut is disabled. */
+html {
+	touch-action: manipulation;
+	/* Disables Chrome's automatic text autosizing ("font boosting"),
+	   which re-evaluates and can enlarge specific text blocks it judges
+	   to be main readable content after a layout change — such as the
+	   x-show display:none-to-visible toggle that happens on every tab
+	   switch. This matches the actual bug precisely: only text (headings)
+	   grew, never the canvas bitmap next to it, and it only happened
+	   after revisiting a tab, i.e. after a layout recalculation, not on
+	   a timer or a data change. -moz-text-size-adjust and the unprefixed
+	   property are included for engines that support them; this has no
+	   effect on user-initiated pinch-zoom, only Chrome's own automatic
+	   heuristic resizing. */
+	-webkit-text-size-adjust: 100%;
+	-moz-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+[x-cloak] {
+	display: none !important;
+}
+
+body {
+	margin: 0;
+	/* Chart.js sets explicit pixel width/height on its canvas from
+	   measured clientWidth in dashboard.js; if that measurement ever
+	   runs a beat before layout has fully settled (e.g. right after
+	   orientation change, or while a card's own hover-lift transform is
+	   still animating), the canvas can end up a few px wider than its
+	   container and force the whole page to scroll horizontally on
+	   mobile. overflow-x:hidden here is the hard backstop — individual
+	   containers below are also capped to max-width:100% so this should
+	   rarely even need to engage. */
+	overflow-x: hidden;
+	background:
+		radial-gradient(ellipse 900px 480px at 15% -8%, var(--accent-faint), transparent 60%),
+		radial-gradient(ellipse 700px 420px at 100% 8%, var(--accent-2-faint), transparent 55%),
+		var(--bg);
+	background-attachment: fixed;
+	color: var(--fg);
+	font-family: var(--font-body);
+	font-size: 14px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+.gnat-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 12px;
+	padding: 16px 20px;
+	border-bottom: 1px solid var(--border-soft);
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+	backdrop-filter: blur(6px);
+	position: sticky;
+	top: 0;
+	z-index: 30;
+}
+
+@media (min-width: 640px) {
+	.gnat-header {
+		padding: 20px 28px;
+	}
+}
+
+/* Below ~560px the brand, date pills, and theme toggle can't share one
+   row without squeezing — this was the actual cause of cards appearing
+   to overlap the header in a prior pass: an unwrapped flex header forced
+   everything to fight for space and threw off every element below it.
+   Stack brand+toggle on one row and let the pill group take its own
+   full-width row underneath. */
+@media (max-width: 560px) {
+	.gnat-header {
+		flex-wrap: wrap;
+	}
+	.gnat-header > .gnat-brand {
+		flex: 1;
+		min-width: 0;
+	}
+	/* Theme toggle stays paired with the brand on row one; the date-range
+	   controls (pills + custom popover) become their own full-width row
+	   below, rather than all three fighting for space on one line.
+	   display:contents lifts date-range-wrap and theme-toggle to be
+	   direct flex items of .gnat-header (alongside .gnat-brand) so
+	   `order` can place them independently instead of moving as a pair. */
+	.gnat-controls {
+		display: contents;
+	}
+	.gnat-header > .gnat-brand {
+		order: 1;
+	}
+	.theme-toggle {
+		order: 2;
+		flex-shrink: 0;
+	}
+	.date-range-wrap {
+		order: 3;
+		flex-basis: 100%;
+		min-width: 0;
+	}
+	.pill-group {
+		width: 100%;
+	}
+	.pill {
+		flex: 1;
+		text-align: center;
+		padding-left: 4px;
+		padding-right: 4px;
+	}
+}
+
+.gnat-brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.gnat-mark {
+	width: 30px;
+	height: 30px;
+	filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+.gnat-mark .wing {
+	transform-origin: 0px 6px;
+	transition: transform 0.4s ease;
+}
+.gnat-brand:hover .wing-left {
+	animation: flutter-left 0.6s ease-in-out infinite;
+}
+.gnat-brand:hover .wing-right {
+	animation: flutter-right 0.6s ease-in-out infinite;
+}
+@keyframes flutter-left {
+	0%, 100% { transform: rotate(0deg); }
+	50% { transform: rotate(-8deg); }
+}
+@keyframes flutter-right {
+	0%, 100% { transform: rotate(0deg); }
+	50% { transform: rotate(8deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.gnat-brand:hover .wing-left,
+	.gnat-brand:hover .wing-right {
+		animation: none;
+	}
+}
+
+.gnat-controls {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+}
+
+.theme-toggle {
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	color: var(--fg-muted);
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.theme-toggle:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+.theme-toggle:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.pill-group {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.pill {
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	color: var(--fg-muted);
+	font-family: var(--font-body);
+	font-size: 12px;
+	font-weight: 500;
+	padding: 6px 12px;
+	border-radius: 20px;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.pill:hover {
+	color: var(--fg);
+	border-color: var(--accent-dim);
+}
+.pill.is-active {
+	background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white 8%), var(--accent));
+	border-color: var(--accent);
+	color: var(--ink);
+	box-shadow: 0 0 0 1px var(--accent-glow), 0 4px 12px -4px var(--accent-glow);
+	font-weight: 600;
+}
+[data-theme="light"] .pill.is-active {
+	color: #ffffff;
+}
+.pill:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------
+   Custom date range popover
+--------------------------------------------------------------------- */
+
+.date-range-wrap {
+	position: relative;
+}
+
+.custom-range-popover {
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	background: var(--panel-bg);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 16px;
+	width: 240px;
+	max-width: calc(100vw - 40px);
+	z-index: 50;
+	box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.5);
+}
+
+.custom-range-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-bottom: 12px;
+}
+
+.custom-range-field label {
+	font-size: 11px;
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.custom-range-field input[type="date"] {
+	background: var(--bg);
+	border: 1px solid var(--border);
+	color: var(--fg);
+	font-family: var(--font-mono);
+	font-size: 13px;
+	padding: 7px 8px;
+	border-radius: 6px;
+	color-scheme: dark;
+}
+[data-theme="light"] .custom-range-field input[type="date"] {
+	color-scheme: light;
+}
+.custom-range-field input[type="date"]:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.custom-range-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 4px;
+}
+
+.custom-range-apply {
+	background: var(--accent);
+	border: none;
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: 12px;
+	font-weight: 600;
+	padding: 7px 14px;
+	border-radius: 6px;
+	cursor: pointer;
+}
+[data-theme="light"] .custom-range-apply {
+	color: #ffffff;
+}
+.custom-range-apply:hover {
+	opacity: 0.9;
+}
+.custom-range-apply:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+.custom-range-apply:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.gnat-main {
+	max-width: 1080px;
+	margin: 0 auto;
+	padding: 28px;
+}
+
+@media (max-width: 560px) {
+	.gnat-main {
+		padding: 16px;
+	}
+}
+
+.gnat-hero {
+	display: flex;
+	gap: 40px;
+	padding-bottom: 24px;
+	margin-bottom: 24px;
+	border-bottom: 1px solid var(--border);
+}
+
+.hero-stat {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.hero-stat-value {
+	font-family: var(--font-mono);
+	font-size: 32px;
+	font-weight: 600;
+	color: var(--fg);
+	line-height: 1;
+}
+.hero-stat-label {
+	font-size: 12px;
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.gnat-section {
+	margin-bottom: 22px;
+}
+
+/* Elevated panel treatment: the same raised-surface language as stat
+   cards (gradient fill, soft shadow, hover lift), applied to the larger
+   content sections — top pages, referrers, countries, devices, browsers,
+   custom events, the two charts, and retention. This is what replaces
+   "divider line under a heading" with an actual card that sits above
+   the page background. */
+.gnat-panel {
+	background: var(--panel-bg);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	box-shadow: var(--panel-shadow);
+	padding: 20px 22px 22px;
+	position: relative;
+	z-index: 1;
+	transition: box-shadow 0.2s ease, border-color 0.2s ease, z-index 0.2s ease;
+}
+.gnat-panel:hover,
+.gnat-panel:focus-within {
+	box-shadow: var(--panel-shadow-hover);
+	border-color: var(--border-soft);
+	/* Same reasoning as .stat-card:hover above — without a z-index bump,
+	   this panel's own tooltip renders underneath whichever sibling panel
+	   happens to sit next/below it in the grid. */
+	z-index: 60;
+}
+.gnat-panel .gnat-section-title,
+.gnat-panel .gnat-section-head {
+	border-bottom-color: var(--border-soft);
+}
+
+.gnat-section-title {
+	font-family: var(--font-display);
+	font-size: 13px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--fg-muted);
+	margin: 0 0 12px 0;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--border);
+}
+
+.gnat-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: 16px;
+}
+
+/* Visitors Over Time + Traffic Sources, side by side instead of stacked
+   full-width — saves a lot of vertical space and the two charts read as
+   a natural pair (time trend / composition) rather than two unrelated
+   full-bleed sections. Line chart gets more room since it carries more
+   detail (24 hourly points vs. a 5-item donut). */
+.gnat-duo {
+	display: grid;
+	grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+	gap: 16px;
+	margin-bottom: 22px;
+}
+.gnat-duo .gnat-section {
+	margin-bottom: 0;
+	min-width: 0;
+}
+
+@media (max-width: 860px) {
+	.gnat-duo {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (max-width: 720px) {
+	.gnat-grid {
+		grid-template-columns: 1fr;
+	}
+	.gnat-hero {
+		flex-wrap: wrap;
+		gap: 20px;
+	}
+}
+
+.breakdown-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 0;
+	font-size: 13px;
+	position: relative;
+	border-bottom: 1px solid var(--border);
+}
+.breakdown-row:last-child {
+	border-bottom: none;
+}
+
+/* Rows that open a drill-down (currently: custom events, click through to
+   the property breakdown modal) get a pointer cursor and a subtle hover
+   tint so it's clear they're interactive, unlike the plain breakdown rows
+   elsewhere on the page that are purely informational. */
+.breakdown-row-clickable {
+	cursor: pointer;
+	border-radius: 6px;
+	transition: background 0.12s ease;
+}
+.breakdown-row-clickable:hover {
+	background: var(--accent-faint);
+}
+.breakdown-row-clickable:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.breakdown-row-icon {
+	width: 18px;
+	height: 18px;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 14px;
+	color: var(--fg-muted);
+}
+
+.flag-icon {
+	overflow: hidden;
+}
+
+.flag-img {
+	width: 18px;
+	height: 13px;
+	object-fit: cover;
+	border-radius: 2px;
+	display: block;
+}
+
+.flag-emoji-fallback {
+	font-size: 14px;
+	line-height: 1;
+}
+
+.breakdown-row-label {
+	flex: 1;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	z-index: 1;
+}
+
+.breakdown-row-count {
+	font-family: var(--font-mono);
+	color: var(--fg-muted);
+	font-size: 12px;
+	z-index: 1;
+}
+
+/* Inset from the row's own bottom border (not flush to it) so the
+   separator line between rows stays visible as a distinct hairline even
+   when a row's fill is close to 100% width — previously the bar ran
+   edge-to-edge including over the border line, and the low-contrast
+   fill color visually swallowed the separator on wide bars (e.g. a
+   country row taking up nearly the full row). */
+.breakdown-row-bar {
+	position: absolute;
+	left: 0;
+	top: 2px;
+	bottom: 3px;
+	background: var(--accent-faint);
+	border-radius: 3px;
+	z-index: 0;
+}
+
+.gnat-empty {
+	color: var(--fg-muted);
+	font-size: 13px;
+	padding: 20px 0;
+	text-align: center;
+}
+
+.gnat-loading {
+	color: var(--fg-muted);
+	font-size: 13px;
+	padding: 20px 0;
+}
+
+/* ---------------------------------------------------------------------
+   Stat cards
+   Dense grid of small metrics, text-forward like the rest of the
+   dashboard rather than glossy KPI tiles. Delta is the only color signal,
+   plus a small colored icon per card for quick visual scanning.
+--------------------------------------------------------------------- */
+
+.stat-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	gap: 10px;
+	margin-bottom: 22px;
+	/* Cards are independently elevated panels now (see .stat-card), not a
+	   shared background bleeding through 1px gaps — that flat "grid of
+	   dividers" look was a big part of the shallow feel. Real gutters
+	   plus per-card shadows read as distinct, separately-placed panels. */
+}
+
+/* auto-fill with a 200px minimum can still squeeze two cramped columns
+   on narrow phones (e.g. ~360-400px viewport minus padding), which is
+   what was causing cards to visually overlap/collide. Force a clean
+   single column below 480px instead of trusting auto-fill to do it. */
+@media (max-width: 480px) {
+	.stat-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+.stat-card {
+	background: var(--panel-bg);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	box-shadow: var(--panel-shadow);
+	padding: 16px 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	position: relative;
+	z-index: 1;
+	transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease, z-index 0.2s ease;
+}
+.stat-card:hover,
+.stat-card:focus-within {
+	box-shadow: var(--panel-shadow-hover);
+	border-color: var(--border-soft);
+	transform: translateY(-1px);
+	/* Lifts this card's whole stacking context above sibling cards so its
+	   tooltip (an absolutely-positioned pseudo-element escaping the
+	   card's own box) paints over neighboring cards instead of being
+	   painted under them in normal DOM order. Without this, a card's
+	   tooltip was getting visually buried underneath the next card below
+	   it — z-index on the pseudo-element alone doesn't help if the
+	   *card itself* has no stacking precedence over its siblings. */
+	z-index: 60;
+}
+
+.stat-card-icon {
+	--icon-color: var(--accent);
+	--icon-bg: var(--accent-faint);
+	width: 30px;
+	height: 30px;
+	border-radius: 8px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: linear-gradient(180deg, var(--icon-bg), transparent);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--icon-color) 22%, transparent) inset;
+	color: var(--icon-color);
+	font-size: 14px;
+	margin-bottom: 4px;
+}
+
+.stat-card-label {
+	font-size: 11px;
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.stat-card-value {
+	font-family: var(--font-mono);
+	font-size: 25px;
+	font-weight: 600;
+	line-height: 1;
+	letter-spacing: -0.01em;
+}
+
+.stat-card-delta {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--fg-muted);
+}
+
+.stat-card-delta.is-up {
+	color: var(--accent);
+}
+.stat-card-delta.is-down {
+	color: var(--danger);
+}
+
+/* ---------------------------------------------------------------------
+   Tooltips
+   Applied via [data-tooltip] on any card-like element (stat cards,
+   section panels, etc). Pure CSS — no JS, no extra markup per card
+   beyond the attribute itself. Positioned above the element by default;
+   flips to below when the card is near the top of the viewport (e.g.
+   the first row of stat cards) since a tooltip opening upward there
+   would clip against the header.
+--------------------------------------------------------------------- */
+
+[data-tooltip] {
+	position: relative;
+}
+
+[data-tooltip]::before,
+[data-tooltip]::after {
+	position: absolute;
+	left: 50%;
+	transform: translateX(-50%) translateY(4px);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.15s ease, transform 0.15s ease;
+	z-index: 40;
+}
+
+[data-tooltip]::before {
+	content: attr(data-tooltip);
+	bottom: calc(100% + 10px);
+	background: var(--ink);
+	color: var(--paper);
+	font-family: var(--font-body);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.4;
+	white-space: normal;
+	width: max-content;
+	max-width: 220px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+	text-align: left;
+}
+[data-theme="light"] [data-tooltip]::before {
+	background: #1c2124;
+	color: #f2f2f0;
+}
+
+[data-tooltip]::after {
+	content: "";
+	bottom: calc(100% + 4px);
+	border: 6px solid transparent;
+	border-top-color: var(--ink);
+}
+[data-theme="light"] [data-tooltip]::after {
+	border-top-color: #1c2124;
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-visible::after {
+	opacity: 1;
+	transform: translateX(-50%) translateY(0);
+}
+
+/* Only the first row of stat cards needs its tooltip flipped below —
+   opening upward there would collide with the header bar. "First row"
+   only means cards 1-4 when the grid is actually 4 columns wide
+   (desktop); at narrower widths the grid reflows to fewer columns (or a
+   single column below 480px — see .stat-grid media query), so cards
+   1-4 are no longer all in row one. Gating this behind the same
+   min-width the desktop 4-up layout needs keeps the flip correct at
+   every breakpoint instead of guessing by position alone. Below that
+   width, tooltips default to opening upward for every card, which is
+   safe since the grid's own top margin plus the sticky header's height
+   leaves enough room. */
+@media (min-width: 900px) {
+	.stat-grid .stat-card:nth-child(-n+4)[data-tooltip]::before {
+		bottom: auto;
+		top: calc(100% + 10px);
+	}
+	.stat-grid .stat-card:nth-child(-n+4)[data-tooltip]::after {
+		bottom: auto;
+		top: calc(100% + 4px);
+		border-top-color: transparent;
+		border-bottom-color: var(--ink);
+	}
+	[data-theme="light"] .stat-grid .stat-card:nth-child(-n+4)[data-tooltip]::after {
+		border-bottom-color: #1c2124;
+	}
+}
+
+/* Touch devices report a phantom ":hover" the instant they're tapped
+   (and it can stay "stuck" after the tap ends), which is unreliable as
+   the sole trigger — so on hover:none devices we drive the tooltip from
+   a real tap instead, toggled via the .tooltip-open class (see the tiny
+   delegated tap handler in dashboard.js). :hover is turned off here to
+   avoid the stuck-hover flash competing with that tap state. */
+@media (hover: none) {
+	[data-tooltip]:hover::before,
+	[data-tooltip]:hover::after {
+		opacity: 0;
+		transform: translateX(-50%) translateY(4px);
+	}
+	[data-tooltip].tooltip-open::before,
+	[data-tooltip].tooltip-open::after {
+		opacity: 1;
+		transform: translateX(-50%) translateY(0);
+	}
+}
+
+/* Tooltips need to render above neighboring cards/sections regardless of
+   stacking order in the document, and must not be clipped by any
+   ancestor. stat-grid uses overflow:hidden to get rounded corners on its
+   1px-gap grid lines, which was clipping tooltips on cards near its
+   edges — raise the tooltip's stacking context and let it escape via a
+   higher z-index rather than relying on ancestor overflow. */
+[data-tooltip]::before,
+[data-tooltip]::after {
+	z-index: 200;
+}
+
+/* ---------------------------------------------------------------------
+   Chart card (Chart.js canvas wrapper)
+--------------------------------------------------------------------- */
+
+.chart-wrap {
+	position: relative;
+	height: 220px;
+	width: 100%;
+	max-width: 100%;
+	overflow: hidden;
+}
+.chart-wrap canvas {
+	max-width: 100%;
+}
+
+/* ---------------------------------------------------------------------
+   Live visitors
+--------------------------------------------------------------------- */
+
+.live-visitors-panel {
+	margin-bottom: 22px;
+}
+
+.live-visitors-panel .gnat-section-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.live-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--accent);
+	box-shadow: 0 0 0 0 var(--accent-glow);
+	animation: live-dot-pulse 2s ease-out infinite;
+	flex-shrink: 0;
+}
+@keyframes live-dot-pulse {
+	0% { box-shadow: 0 0 0 0 var(--accent-glow); }
+	70% { box-shadow: 0 0 0 6px transparent; }
+	100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.live-dot {
+		animation: none;
+	}
+}
+
+.live-visitor-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 6px 14px;
+	padding: 10px 0;
+	font-size: 13px;
+	border-bottom: 1px solid var(--border);
+}
+.live-visitor-row:last-child {
+	border-bottom: none;
+}
+
+.live-visitor-page {
+	font-family: var(--font-mono);
+	color: var(--fg);
+	font-weight: 500;
+}
+
+.live-visitor-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--fg-muted);
+	font-size: 12px;
+	flex-wrap: wrap;
+}
+.live-visitor-meta .breakdown-row-icon {
+	width: 16px;
+	height: 12px;
+}
+.live-visitor-meta i {
+	font-size: 12px;
+}
+
+.live-visitor-sep {
+	color: var(--border);
+}
+
+.live-visitor-duration {
+	font-family: var(--font-mono);
+	color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------
+   Traffic sources: donut + legend
+--------------------------------------------------------------------- */
+
+.donut-row {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	flex-wrap: nowrap;
+}
+
+.donut-wrap {
+	position: relative;
+	width: 108px;
+	height: 108px;
+	flex-shrink: 0;
+}
+
+.donut-legend {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	font-size: 11.5px;
+	min-width: 0;
+	flex: 1;
+}
+
+.donut-legend-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.donut-legend-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.donut-legend-label {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.donut-legend-label {
+	color: var(--fg);
+}
+
+.donut-legend-count {
+	font-family: var(--font-mono);
+	color: var(--fg-muted);
+	font-size: 10.5px;
+	white-space: nowrap;
+	margin-left: auto;
+	padding-left: 6px;
+}
+
+/* ---------------------------------------------------------------------
+   Section header with "View All" action
+--------------------------------------------------------------------- */
+
+.gnat-section-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin: 0 0 12px 0;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--border);
+}
+
+.gnat-section-head .gnat-section-title {
+	margin: 0;
+	padding: 0;
+	border: none;
+}
+
+.view-all-btn {
+	background: none;
+	border: none;
+	color: var(--accent);
+	font-family: var(--font-body);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 0;
+}
+.view-all-btn:hover {
+	color: var(--fg);
+}
+.view-all-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------
+   Tier badges
+--------------------------------------------------------------------- */
+
+.tier-badge {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	padding: 2px 6px;
+	border-radius: 4px;
+	border: 1px solid var(--border);
+	color: var(--fg-muted);
+	margin-left: 8px;
+	flex-shrink: 0;
+}
+
+.tier-badge[data-tier="1"] {
+	color: var(--accent);
+	border-color: var(--accent-dim);
+	background: var(--accent-faint);
+}
+.tier-badge[data-tier="2"] {
+	color: #e8c07d;
+	border-color: rgba(232, 192, 125, 0.4);
+	background: rgba(232, 192, 125, 0.1);
+}
+.tier-badge[data-tier="3"] {
+	color: var(--fg-muted);
+}
+
+/* ---------------------------------------------------------------------
+   AI review card
+--------------------------------------------------------------------- */
+
+.ai-review-card {
+	background: linear-gradient(155deg, var(--accent-faint), var(--bg-raised-2) 45%);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	box-shadow: var(--panel-shadow);
+	padding: 20px 22px;
+	position: relative;
+	/* No overflow:hidden here — that was clipping the Regenerate button's
+	   tooltip too, since the button lives inside this card and its
+	   tooltip is an absolutely-positioned child of it. The decorative
+	   glow below now clips itself via its own wrapper instead of relying
+	   on the whole card to do it. */
+}
+
+/* Dedicated layer for the decorative glow, sized exactly to the card and
+   clipped to its rounded corners on its own — this is what overflow:
+   hidden on .ai-review-card used to do, but scoped so it only affects
+   the glow and not any real content (like the regenerate button's
+   tooltip) that needs to escape the card's bounds. */
+.ai-review-glow {
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	overflow: hidden;
+	pointer-events: none;
+	z-index: 0;
+}
+.ai-review-glow::before {
+	content: "";
+	position: absolute;
+	top: -40%;
+	right: -10%;
+	width: 220px;
+	height: 220px;
+	background: radial-gradient(circle, var(--accent-glow), transparent 70%);
+	opacity: 0.25;
+}
+
+/* The card's own tooltip lives on this wrapper rather than
+   .ai-review-card itself, so it isn't affected by the card's internal
+   layering, and gets the same hover z-index lift as every other card so
+   it isn't painted under whatever section follows it. */
+.ai-review-wrap {
+	position: relative;
+	z-index: 1;
+	border-radius: 12px;
+	transition: z-index 0.2s ease;
+}
+.ai-review-wrap:hover,
+.ai-review-wrap:focus-within {
+	z-index: 60;
+}
+
+.ai-review-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 10px;
+	position: relative;
+	z-index: 1;
+}
+
+.ai-review-icon {
+	width: 16px;
+	height: 16px;
+	color: var(--accent);
+	flex-shrink: 0;
+}
+
+.ai-review-title {
+	font-family: var(--font-display);
+	font-size: 13px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--fg-muted);
+	flex: 1;
+}
+
+.ai-review-regen {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: transparent;
+	border: 1px solid var(--border);
+	color: var(--fg-muted);
+	font-family: var(--font-body);
+	font-size: 11.5px;
+	font-weight: 500;
+	padding: 5px 10px;
+	border-radius: 20px;
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.ai-review-regen:hover:not(:disabled) {
+	color: var(--accent);
+	border-color: var(--accent-dim);
+	background: var(--accent-faint);
+}
+.ai-review-regen:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.ai-review-regen:disabled {
+	cursor: default;
+	opacity: 0.7;
+}
+.ai-review-regen svg {
+	flex-shrink: 0;
+	transition: transform 0.5s ease;
+}
+.ai-review-regen.is-loading svg {
+	animation: ai-regen-spin 0.9s linear infinite;
+}
+@keyframes ai-regen-spin {
+	to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.ai-review-regen.is-loading svg {
+		animation: none;
+	}
+}
+
+/* On very narrow cards the label can get tight next to the pill button
+   — drop to icon-only under 380px so it never wraps awkwardly. */
+@media (max-width: 380px) {
+	.ai-review-regen span {
+		display: none;
+	}
+	.ai-review-regen {
+		padding: 6px 8px;
+	}
+}
+
+.ai-review-body {
+	font-size: 14px;
+	line-height: 1.6;
+	color: var(--fg);
+	transition: opacity 0.2s ease;
+	position: relative;
+	z-index: 1;
+}
+.ai-review-body.is-loading {
+	opacity: 0.5;
+}
+
+.ai-review-meta {
+	margin-top: 12px;
+	font-size: 11px;
+	color: var(--fg-muted);
+	font-family: var(--font-mono);
+}
+
+/* ---------------------------------------------------------------------
+   Modal (shared by every "View All")
+--------------------------------------------------------------------- */
+
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.6);
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	z-index: 100;
+	padding: 0;
+}
+
+@media (min-width: 640px) {
+	.modal-backdrop {
+		align-items: center;
+		padding: 24px;
+	}
+}
+
+.modal-panel {
+	background: var(--panel-bg);
+	border: 1px solid var(--border);
+	border-radius: 12px 12px 0 0;
+	box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6);
+	width: 100%;
+	max-width: 480px;
+	max-height: 85vh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+@media (min-width: 640px) {
+	.modal-panel {
+		border-radius: 12px;
+	}
+}
+
+.modal-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 18px 20px;
+	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
+}
+
+.modal-title {
+	font-family: var(--font-display);
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.modal-close {
+	background: none;
+	border: none;
+	color: var(--fg-muted);
+	cursor: pointer;
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+}
+.modal-close:hover {
+	color: var(--fg);
+	background: var(--accent-faint);
+}
+.modal-close:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.modal-body {
+	overflow-y: auto;
+	padding: 8px 20px 20px;
+}
+
+.modal-body .breakdown-row {
+	padding: 10px 0;
+	border-bottom: 1px solid var(--border);
+}
+.modal-body .breakdown-row:last-child {
+	border-bottom: none;
+}
+
+.modal-row-pct {
+	font-family: var(--font-mono);
+	color: var(--fg-muted);
+	font-size: 11px;
+	margin-left: 8px;
+}
+
+/* ---------------------------------------------------------------------
+   Event property drill-down modal
+--------------------------------------------------------------------- */
+
+.event-detail-total {
+	font-size: 12px;
+	font-family: var(--font-mono);
+	color: var(--fg-muted);
+	margin: 4px 0 18px 0;
+}
+.event-detail-total span {
+	color: var(--fg);
+	font-weight: 600;
+}
+
+.event-detail-property {
+	margin-bottom: 22px;
+}
+.event-detail-property:last-child {
+	margin-bottom: 0;
+}
+
+.event-detail-property-name {
+	font-family: var(--font-display);
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--fg-muted);
+	margin: 0 0 6px 0;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--border);
+}
+
+/* ---------------------------------------------------------------------
+   Tabs
+--------------------------------------------------------------------- */
+
+.gnat-tabs {
+	display: flex;
+	gap: 4px;
+	margin-bottom: 28px;
+	border-bottom: 1px solid var(--border);
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.gnat-tab {
+	background: none;
+	border: none;
+	color: var(--fg-muted);
+	font-family: var(--font-display);
+	font-size: 13px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	padding: 10px 4px;
+	margin-right: 20px;
+	cursor: pointer;
+	position: relative;
+	top: 1px;
+	border-bottom: 2px solid transparent;
+}
+.gnat-tab:hover {
+	color: var(--fg);
+}
+.gnat-tab.is-active {
+	color: var(--accent);
+	border-bottom-color: var(--accent);
+	text-shadow: 0 0 18px var(--accent-glow);
+}
+.gnat-tab:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------
+   Funnels
+--------------------------------------------------------------------- */
+
+.funnel-step {
+	margin-bottom: 4px;
+	position: relative;
+	z-index: 1;
+	transition: z-index 0.2s ease;
+}
+.funnel-step:hover,
+.funnel-step:focus-within {
+	z-index: 60;
+}
+
+.funnel-step-bar-track {
+	background: var(--panel-bg);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	box-shadow: var(--panel-shadow);
+	overflow: hidden;
+	position: relative;
+	height: 44px;
+	display: flex;
+	align-items: center;
+	transition: box-shadow 0.2s ease;
+}
+.funnel-step-bar-track:hover {
+	box-shadow: var(--panel-shadow-hover);
+}
+
+.funnel-step-bar-fill {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	background: var(--accent-faint);
+	border-right: 2px solid var(--accent-dim);
+	transition: width 0.3s ease;
+}
+
+.funnel-step-content {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	padding: 0 14px;
+}
+
+.funnel-step-label {
+	font-size: 13px;
+	color: var(--fg);
+}
+
+.funnel-step-count {
+	font-family: var(--font-mono);
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--fg);
+}
+
+.funnel-step-connector {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 14px;
+	font-size: 11px;
+	color: var(--fg-muted);
+	font-family: var(--font-mono);
+}
+
+.funnel-step-connector-line {
+	width: 1px;
+	height: 14px;
+	background: var(--border);
+	margin-left: 1px;
+}
+
+.funnel-drop-pct {
+	color: var(--danger);
+}
+
+.funnel-summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 18px 24px;
+	margin-bottom: 24px;
+	padding: 16px 18px;
+	background: var(--panel-bg);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	box-shadow: var(--panel-shadow);
+	position: relative;
+	z-index: 1;
+	transition: z-index 0.2s ease;
+}
+.funnel-summary:hover,
+.funnel-summary:focus-within {
+	z-index: 60;
+}
+
+.funnel-summary-stat {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.funnel-summary-value {
+	font-family: var(--font-mono);
+	font-size: 20px;
+	font-weight: 600;
+}
+
+.funnel-summary-label {
+	font-size: 11px;
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+/* ---------------------------------------------------------------------
+   Retention
+--------------------------------------------------------------------- */
+
+.retention-summary {
+	font-size: 13px;
+	color: var(--fg-muted);
+	margin-bottom: 16px;
+}
+.retention-summary strong {
+	color: var(--fg);
+	font-family: var(--font-mono);
+	font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------
+   Export tab
+--------------------------------------------------------------------- */
+
+.export-copy {
+	font-size: 13px;
+	line-height: 1.6;
+	color: var(--fg-muted);
+	margin: 0 0 20px 0;
+	max-width: 560px;
+}
+.export-copy strong {
+	color: var(--fg);
+	font-family: var(--font-mono);
+	font-weight: 600;
+}
+
+.export-format-group {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	flex-wrap: wrap;
+	margin-bottom: 10px;
+}
+
+.export-format-label {
+	font-size: 11px;
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.export-format-note {
+	font-size: 12px;
+	color: var(--fg-muted);
+	line-height: 1.5;
+	margin: 0 0 20px 0;
+	max-width: 480px;
+}
+
+.export-download-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white 8%), var(--accent));
+	border: 1px solid var(--accent);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: 13px;
+	font-weight: 600;
+	padding: 10px 18px;
+	border-radius: 8px;
+	cursor: pointer;
+	box-shadow: 0 4px 12px -4px var(--accent-glow);
+	transition: opacity 0.15s ease, transform 0.15s ease;
+}
+[data-theme="light"] .export-download-btn {
+	color: #ffffff;
+}
+.export-download-btn:hover {
+	opacity: 0.92;
+	transform: translateY(-1px);
+}
+.export-download-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.export-download-btn svg {
+	flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------
+   MCP tab
+--------------------------------------------------------------------- */
+
+.mcp-block-label {
+	font-size: 11px;
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	margin: 20px 0 8px 0;
+}
+.mcp-block-label:first-of-type {
+	margin-top: 4px;
+}
+
+.mcp-code-block {
+	position: relative;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 14px 16px;
+	max-width: 480px;
+	overflow-x: auto;
+}
+
+.mcp-code-block pre {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--fg);
+	white-space: pre;
+}
+
+.mcp-copy-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	color: var(--fg-muted);
+	font-family: var(--font-body);
+	font-size: 11px;
+	font-weight: 500;
+	padding: 4px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: border-color 0.15s ease, color 0.15s ease;
+}
+.mcp-copy-btn:hover {
+	color: var(--accent);
+	border-color: var(--accent-dim);
+}
+.mcp-copy-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.mcp-footnote {
+	font-size: 12px;
+	color: var(--fg-muted);
+	margin-top: 22px;
+}
+
+/* ---------------------------------------------------------------------
+   About tab
+--------------------------------------------------------------------- */
+
+.about-panel {
+	max-width: 520px;
+}
+
+.about-mark {
+	width: 40px;
+	height: 40px;
+	margin-bottom: 14px;
+	filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+.about-mark svg {
+	width: 100%;
+	height: 100%;
+}
+
+.about-title {
+	font-family: var(--font-display);
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--fg);
+	margin: 0 0 6px 0;
+}
+
+.about-tagline {
+	font-size: 13px;
+	font-style: italic;
+	color: var(--accent);
+	margin: 0 0 16px 0;
+}
+
+.about-body {
+	font-size: 13.5px;
+	line-height: 1.7;
+	color: var(--fg-muted);
+	margin: 0 0 14px 0;
+}
+
+.about-links {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 20px 0 18px 0;
+}
+
+.about-link {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 10px 14px;
+	color: var(--fg);
+	font-size: 13px;
+	font-weight: 500;
+	text-decoration: none;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+.about-link:hover {
+	border-color: var(--accent-dim);
+	background: var(--accent-faint);
+}
+.about-link:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.about-link i {
+	color: var(--accent);
+	width: 16px;
+	text-align: center;
+	flex-shrink: 0;
+}
+.about-link-badge {
+	margin-left: auto;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	color: var(--fg-muted);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 2px 6px;
+	flex-shrink: 0;
+}
+
+.about-footnote {
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--fg-muted);
+	border-top: 1px solid var(--border);
+	padding-top: 16px;
+	margin: 4px 0 0 0;
+}

@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Gnat</title>
+	<link rel="stylesheet" href="/dashboard.css" />
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+	<script defer src="/alpine.min.js"></script>
+	<script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body x-data="gnatDashboard()" x-init="init()" :data-theme="theme" data-theme="dark">
+
+	<header class="gnat-header">
+		<div class="gnat-brand" role="img" aria-label="gnat">
+			<svg class="gnat-mark" viewBox="0 0 40 40" fill="none">
+				<path class="wing wing-left" d="M18 16 C6 4, -8 10, 0 26 C6 38, 22 30, 18 20 Z" fill="var(--accent)" opacity="0.9"/>
+				<path class="wing wing-right" d="M22 16 C34 4, 48 10, 40 26 C34 38, 18 30, 22 20 Z" fill="var(--accent)" opacity="0.55"/>
+				<circle cx="20" cy="22" r="7" fill="var(--fg)"/>
+			</svg>
+		</div>
+
+		<div class="gnat-controls">
+			<div class="date-range-wrap" @keydown.escape.window="closeCustomRange()">
+				<div class="pill-group">
+					<button class="pill" :class="range === '7' && 'is-active'" @click="setPresetRange('7')">7D</button>
+					<button class="pill" :class="range === '30' && 'is-active'" @click="setPresetRange('30')">30D</button>
+					<button class="pill" :class="range === '90' && 'is-active'" @click="setPresetRange('90')">90D</button>
+					<button class="pill" :class="range === 'custom' && 'is-active'" @click="openCustomRange()" x-text="customRangeLabel"></button>
+				</div>
+
+				<div class="custom-range-popover" x-show="customRangeOpen" x-cloak @click.outside="closeCustomRange()">
+					<div class="custom-range-field">
+						<label for="custom-from">From</label>
+						<input id="custom-from" type="date" x-model="customFrom" :max="customTo" />
+					</div>
+					<div class="custom-range-field">
+						<label for="custom-to">To</label>
+						<input id="custom-to" type="date" x-model="customTo" :min="customFrom" :max="new Date().toISOString().slice(0,10)" />
+					</div>
+					<div class="custom-range-actions">
+						<button class="pill" @click="closeCustomRange()">Cancel</button>
+						<button class="custom-range-apply" @click="applyCustomRange()" :disabled="!customFrom || !customTo">Apply</button>
+					</div>
+				</div>
+			</div>
+
+			<button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+				<svg x-show="theme === 'dark'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="12" cy="12" r="5"/>
+					<line x1="12" y1="1" x2="12" y2="3"/>
+					<line x1="12" y1="21" x2="12" y2="23"/>
+					<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+					<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+					<line x1="1" y1="12" x2="3" y2="12"/>
+					<line x1="21" y1="12" x2="23" y2="12"/>
+					<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+					<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+				</svg>
+				<svg x-show="theme === 'light'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+				</svg>
+			</button>
+		</div>
+	</header>
+
+	<main class="gnat-main">
+
+		<!-- tabs -->
+		<div class="gnat-tabs">
+			<button class="gnat-tab" :class="activeTab === 'overview' && 'is-active'" @click="setTab('overview')">Overview</button>
+			<button class="gnat-tab" :class="activeTab === 'funnels' && 'is-active'" @click="setTab('funnels')">Funnels</button>
+			<button class="gnat-tab" :class="activeTab === 'retention' && 'is-active'" @click="setTab('retention')">Retention</button>
+			<button class="gnat-tab" :class="activeTab === 'export' && 'is-active'" @click="setTab('export')">Export</button>
+			<button class="gnat-tab" :class="activeTab === 'mcp' && 'is-active'" @click="setTab('mcp')">MCP</button>
+			<button class="gnat-tab" :class="activeTab === 'about' && 'is-active'" @click="setTab('about')">About</button>
+		</div>
+
+		<!-- ============================= OVERVIEW ============================= -->
+		<div x-show="activeTab === 'overview'">
+
+		<!-- stat cards -->
+		<div class="stat-grid">
+			<div class="stat-card" tabindex="0" data-tooltip="Number of distinct visitors who have loaded your site today, counted once regardless of how many pages they viewed.">
+				<span class="stat-card-icon" style="--icon-color:#2dd4bf;--icon-bg:rgba(45,212,191,0.12);"><i class="fa-solid fa-user-group"></i></span>
+				<span class="stat-card-label">Unique Visitors Today</span>
+				<span class="stat-card-value" x-text="stats.unique_visitors_today?.value ?? '—'"></span>
+				<span class="stat-card-delta" :class="stats.unique_visitors_today?.delta_pct > 0 ? 'is-up' : 'is-down'" x-text="formatDelta(stats.unique_visitors_today?.delta_pct)"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Total number of pages loaded today across all visitors, including repeat views from the same person.">
+				<span class="stat-card-icon" style="--icon-color:#818cf8;--icon-bg:rgba(129,140,248,0.12);"><i class="fa-solid fa-file-lines"></i></span>
+				<span class="stat-card-label">Page Views Today</span>
+				<span class="stat-card-value" x-text="stats.pageviews_today?.value ?? '—'"></span>
+				<span class="stat-card-delta" :class="stats.pageviews_today?.delta_pct > 0 ? 'is-up' : 'is-down'" x-text="formatDelta(stats.pageviews_today?.delta_pct)"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Visitors with an active session on your site right now, updated in near real time.">
+				<span class="stat-card-icon" style="--icon-color:#4ade80;--icon-bg:rgba(74,222,128,0.12);"><i class="fa-solid fa-tower-broadcast"></i></span>
+				<span class="stat-card-label">Live Visitors</span>
+				<span class="stat-card-value" x-text="stats.live_visitors?.value ?? '—'"></span>
+				<span class="stat-card-delta">Currently active</span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Tracked events counted so far this billing month, compared against your plan's monthly limit.">
+				<span class="stat-card-icon" style="--icon-color:#c9776a;--icon-bg:rgba(201,119,106,0.12);"><i class="fa-solid fa-gauge-high"></i></span>
+				<span class="stat-card-label">Monthly Usage</span>
+				<span class="stat-card-value" x-text="stats.monthly_usage?.value ?? '—'"></span>
+				<span class="stat-card-delta" x-text="stats.monthly_usage ? ((stats.monthly_usage.value / stats.monthly_usage.limit) * 100).toFixed(1) + '% of ' + stats.monthly_usage.limit.toLocaleString() + ' limit' : ''"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Average amount of time visitors spend on a single page today before navigating away or leaving.">
+				<span class="stat-card-icon" style="--icon-color:#e8c07d;--icon-bg:rgba(232,192,125,0.12);"><i class="fa-solid fa-hourglass-half"></i></span>
+				<span class="stat-card-label">Avg Time on Page</span>
+				<span class="stat-card-value" x-text="stats.avg_time_on_page_today ? formatDuration(stats.avg_time_on_page_today.value_seconds) : '—'"></span>
+				<span class="stat-card-delta" :class="stats.avg_time_on_page_today?.delta_pct > 0 ? 'is-up' : 'is-down'" x-text="formatDelta(stats.avg_time_on_page_today?.delta_pct)"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Number of custom events (like button clicks or form submissions) your site has sent today, and how many distinct event types they came from.">
+				<span class="stat-card-icon" style="--icon-color:#f472b6;--icon-bg:rgba(244,114,182,0.12);"><i class="fa-solid fa-bolt"></i></span>
+				<span class="stat-card-label">Custom Events</span>
+				<span class="stat-card-value" x-text="stats.custom_events_today?.value ?? '—'"></span>
+				<span class="stat-card-delta" x-text="formatDelta(stats.custom_events_today?.delta_pct) + ' · ' + (stats.custom_events_today?.unique_events ?? 0) + ' unique events'"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Average length of a full visitor session today, from first page load to the last recorded activity.">
+				<span class="stat-card-icon" style="--icon-color:#60a5fa;--icon-bg:rgba(96,165,250,0.12);"><i class="fa-solid fa-clock"></i></span>
+				<span class="stat-card-label">Avg Time on Site</span>
+				<span class="stat-card-value" x-text="stats.avg_time_on_site_today ? formatDuration(stats.avg_time_on_site_today.value_seconds) : '—'"></span>
+				<span class="stat-card-delta" :class="stats.avg_time_on_site_today?.delta_pct > 0 ? 'is-up' : 'is-down'" x-text="formatDelta(stats.avg_time_on_site_today?.delta_pct)"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Share of today's visitors who left after viewing only one page, without any further interaction. Lower is generally better.">
+				<span class="stat-card-icon" style="--icon-color:#fb923c;--icon-bg:rgba(251,146,60,0.12);"><i class="fa-solid fa-door-open"></i></span>
+				<span class="stat-card-label">Bounce Rate Today</span>
+				<span class="stat-card-value" x-text="stats.bounce_rate_today ? stats.bounce_rate_today.value_pct.toFixed(1) + '%' : '—'"></span>
+				<span class="stat-card-delta" :class="stats.bounce_rate_today?.delta_pct > 0 ? 'is-down' : 'is-up'" x-text="formatDelta(stats.bounce_rate_today?.delta_pct)"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Percentage of visitors from the past week who came back and visited again, a signal of how sticky your site is.">
+				<span class="stat-card-icon" style="--icon-color:#a78bfa;--icon-bg:rgba(167,139,250,0.12);"><i class="fa-solid fa-arrow-rotate-left"></i></span>
+				<span class="stat-card-label">Retention Rate (7 days)</span>
+				<span class="stat-card-value" x-text="stats.retention_rate_7d ? stats.retention_rate_7d.value_pct.toFixed(1) + '%' : '—'"></span>
+				<span class="stat-card-delta" :class="stats.retention_rate_7d?.delta_pct > 0 ? 'is-up' : 'is-down'" x-text="formatDelta(stats.retention_rate_7d?.delta_pct) ? formatDelta(stats.retention_rate_7d?.delta_pct).replace('from yesterday', 'from prev 7 days') : ''"></span>
+			</div>
+			<div class="stat-card" tabindex="0" data-tooltip="Average number of pages a visitor views in a single session today. Higher usually means deeper engagement.">
+				<span class="stat-card-icon" style="--icon-color:#22d3ee;--icon-bg:rgba(34,211,238,0.12);"><i class="fa-solid fa-layer-group"></i></span>
+				<span class="stat-card-label">Pages per Session</span>
+				<span class="stat-card-value" x-text="stats.pages_per_session_today ? stats.pages_per_session_today.value.toFixed(1) : '—'"></span>
+				<span class="stat-card-delta" :class="stats.pages_per_session_today?.delta_pct > 0 ? 'is-up' : 'is-down'" x-text="formatDelta(stats.pages_per_session_today?.delta_pct)"></span>
+			</div>
+		</div>
+
+		<!-- live visitors -->
+		<div class="gnat-section gnat-panel live-visitors-panel" tabindex="0" data-tooltip="Everyone with an active session on your site right now, updated in near real time: what page they're on, where they're from, and how long they've been active." x-show="liveVisitors.length > 0">
+			<div class="gnat-section-head">
+				<h2 class="gnat-section-title">
+					<span class="live-dot" aria-hidden="true"></span>
+					Live Visitors
+				</h2>
+			</div>
+			<template x-for="v in liveVisitors" :key="v.id">
+				<div class="live-visitor-row">
+					<span class="live-visitor-page" x-text="v.page"></span>
+					<span class="live-visitor-meta">
+						<span class="breakdown-row-icon flag-icon">
+							<img :src="countryFlagUrl(v.country_code)" :alt="v.country_name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
+							<span class="flag-emoji-fallback" x-text="countryFlagEmoji(v.country_code)" style="display:none;"></span>
+						</span>
+						<span x-text="v.country_name"></span>
+						<span class="live-visitor-sep">·</span>
+						<i :class="deviceIcon(v.device)" :style="`color: ${deviceColor(v.device)}`"></i>
+						<span x-text="v.device"></span>
+						<span class="live-visitor-sep">·</span>
+						<i :class="browserIcon(v.browser)" :style="`color: ${browserColor(v.browser)}`"></i>
+						<span x-text="v.browser"></span>
+						<span class="live-visitor-sep">·</span>
+						<span class="live-visitor-duration" x-text="formatDuration(v.active_seconds) + ' active'"></span>
+					</span>
+				</div>
+			</template>
+		</div>
+
+		<!-- visitors over time + traffic sources, side by side -->
+		<div class="gnat-duo">
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Visitor counts plotted across the selected date range, so you can spot spikes, dips, and daily patterns at a glance.">
+				<h2 class="gnat-section-title">Visitors Over Time</h2>
+				<div class="chart-wrap">
+					<canvas id="visitors-chart"></canvas>
+				</div>
+			</div>
+
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Breaks down where your traffic is coming from: direct visits, search engines, social platforms, email, and other referring sites.">
+				<h2 class="gnat-section-title">Traffic Sources</h2>
+				<div class="donut-row">
+					<div class="donut-wrap">
+						<canvas id="traffic-donut"></canvas>
+					</div>
+					<div class="donut-legend">
+						<template x-for="src in trafficSources" :key="src.label">
+							<div class="donut-legend-item">
+								<span class="donut-legend-dot" :style="`background: ${src.color}`"></span>
+								<span class="donut-legend-label" x-text="src.label"></span>
+								<span class="donut-legend-count" x-text="`${src.count} · ${src.pct}%`"></span>
+							</div>
+						</template>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="gnat-grid">
+
+			<!-- top pages -->
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="The pages on your site getting the most views, ranked from most to least visited.">
+				<div class="gnat-section-head">
+					<h2 class="gnat-section-title">Top Pages</h2>
+					<button class="view-all-btn" @click="openModal('pages')" x-show="topPages.length > 0">View All ›</button>
+				</div>
+				<template x-if="topPages.length === 0">
+					<p class="gnat-empty">No data yet</p>
+				</template>
+				<template x-for="row in topPages.slice(0, 5)" :key="row.label">
+					<div class="breakdown-row">
+						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+						<span class="breakdown-row-label" x-text="row.label"></span>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+					</div>
+				</template>
+			</div>
+
+			<!-- top referrers -->
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="External websites sending you the most traffic, excluding search engines, social, and email, which are already covered by Traffic Sources above.">
+				<div class="gnat-section-head">
+					<h2 class="gnat-section-title">Top Referrers</h2>
+					<button class="view-all-btn" @click="openModal('referrers')" x-show="topReferrers.length > 0">View All ›</button>
+				</div>
+				<template x-if="topReferrers.length === 0">
+					<p class="gnat-empty">No data yet</p>
+				</template>
+				<template x-for="row in topReferrers.slice(0, 5)" :key="row.label">
+					<div class="breakdown-row">
+						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+						<span class="breakdown-row-icon"><i :class="referrerIcon(row)" :style="`color: ${referrerColor(row)}`"></i></span>
+						<span class="breakdown-row-label" x-text="row.label"></span>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+					</div>
+				</template>
+			</div>
+
+			<!-- countries -->
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Visitor counts by country, with a tier badge showing how that country is classified for pricing or ad-value purposes.">
+				<div class="gnat-section-head">
+					<h2 class="gnat-section-title">Countries</h2>
+					<button class="view-all-btn" @click="openModal('countries')" x-show="countries.length > 0">View All ›</button>
+				</div>
+				<template x-if="countries.length === 0">
+					<p class="gnat-empty">No data yet</p>
+				</template>
+				<template x-for="row in countries.slice(0, 5)" :key="row.code">
+					<div class="breakdown-row">
+						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+						<span class="breakdown-row-icon flag-icon">
+							<img :src="countryFlagUrl(row.code)" :alt="row.name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
+							<span class="flag-emoji-fallback" x-text="countryFlagEmoji(row.code)" style="display:none;"></span>
+						</span>
+						<span class="breakdown-row-label" x-text="row.name || 'Unknown'"></span>
+						<span class="tier-badge" :data-tier="row.tier" x-text="'TIER ' + row.tier"></span>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+					</div>
+				</template>
+			</div>
+
+			<!-- devices -->
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Visits broken down by the type of device used: desktop, mobile, tablet, or automated bots.">
+				<div class="gnat-section-head">
+					<h2 class="gnat-section-title">Device Types</h2>
+					<button class="view-all-btn" @click="openModal('devices')" x-show="devices.length > 0">View All ›</button>
+				</div>
+				<template x-if="devices.length === 0">
+					<p class="gnat-empty">No data yet</p>
+				</template>
+				<template x-for="row in devices.slice(0, 5)" :key="row.type">
+					<div class="breakdown-row">
+						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+						<span class="breakdown-row-icon"><i :class="deviceIcon(row.type)" :style="`color: ${deviceColor(row.type)}`"></i></span>
+						<span class="breakdown-row-label" x-text="row.type || 'Unknown'"></span>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+					</div>
+				</template>
+			</div>
+
+			<!-- browsers -->
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Visits broken down by the web browser visitors used to access your site.">
+				<div class="gnat-section-head">
+					<h2 class="gnat-section-title">Browsers</h2>
+					<button class="view-all-btn" @click="openModal('browsers')" x-show="browsers.length > 0">View All ›</button>
+				</div>
+				<template x-if="browsers.length === 0">
+					<p class="gnat-empty">No data yet</p>
+				</template>
+				<template x-for="row in browsers.slice(0, 5)" :key="row.name">
+					<div class="breakdown-row">
+						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+						<span class="breakdown-row-icon"><i :class="browserIcon(row.name)" :style="`color: ${browserColor(row.name)}`"></i></span>
+						<span class="breakdown-row-label" x-text="row.name"></span>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+					</div>
+				</template>
+			</div>
+
+			<!-- custom events -->
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Custom events your site has sent, such as button clicks or form submissions, ranked by how often each one fired. Click an event to see its property breakdown.">
+				<div class="gnat-section-head">
+					<h2 class="gnat-section-title">Custom Events</h2>
+					<button class="view-all-btn" @click="openModal('events')" x-show="customEvents.length > 0">View All ›</button>
+				</div>
+				<template x-if="customEvents.length === 0">
+					<p class="gnat-empty">No data yet</p>
+				</template>
+				<template x-for="row in customEvents.slice(0, 5)" :key="row.label">
+					<div class="breakdown-row breakdown-row-clickable" @click="openEventDetail(row)">
+						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+						<span class="breakdown-row-icon"><i class="fa-solid fa-diamond" style="color:#f472b6"></i></span>
+						<span class="breakdown-row-label" x-text="row.label"></span>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+					</div>
+				</template>
+			</div>
+
+		</div>
+
+		<!-- AI review -->
+		<div class="gnat-section ai-review-wrap" x-show="aiReview" tabindex="0" data-tooltip="An automatically generated summary highlighting notable patterns or changes in today's traffic.">
+			<div class="ai-review-card">
+				<div class="ai-review-glow"></div>
+				<div class="ai-review-head">
+					<svg class="ai-review-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M12 2 L14.5 9.5 L22 12 L14.5 14.5 L12 22 L9.5 14.5 L2 12 L9.5 9.5 Z"/>
+					</svg>
+					<span class="ai-review-title">AI Summary</span>
+					<button
+						class="ai-review-regen"
+						@click="regenerateAIReview()"
+						:disabled="aiReviewLoading"
+						:class="aiReviewLoading && 'is-loading'"
+						aria-label="Regenerate summary"
+					>
+						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+							<path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+							<path d="M21 3v6h-6"/>
+						</svg>
+						<span x-text="aiReviewLoading ? 'Regenerating…' : 'Regenerate'"></span>
+					</button>
+				</div>
+				<p class="ai-review-body" :class="aiReviewLoading && 'is-loading'" x-text="aiReview?.summary"></p>
+			</div>
+		</div>
+
+		</div>
+		<!-- =========================== END OVERVIEW =========================== -->
+
+		<!-- ============================= FUNNELS ============================== -->
+		<div x-show="activeTab === 'funnels'">
+
+			<template x-if="funnels.length === 0">
+				<p class="gnat-empty">No funnels configured yet</p>
+			</template>
+
+			<template x-if="selectedFunnel">
+				<div>
+					<div class="pill-group" style="margin-bottom: 20px;">
+						<template x-for="f in funnels" :key="f.id">
+							<button class="pill" :class="selectedFunnelId === f.id && 'is-active'" @click="selectedFunnelId = f.id" x-text="f.name"></button>
+						</template>
+					</div>
+
+					<div class="funnel-summary" tabindex="0" data-tooltip="A quick summary of the funnel: how many people entered at the first step, how many made it to the last step, and the overall conversion rate between them.">
+						<div class="funnel-summary-stat">
+							<span class="funnel-summary-value" x-text="selectedFunnel.steps[0]?.count"></span>
+							<span class="funnel-summary-label">Entered</span>
+						</div>
+						<div class="funnel-summary-stat">
+							<span class="funnel-summary-value" x-text="selectedFunnel.steps[selectedFunnel.steps.length - 1]?.count"></span>
+							<span class="funnel-summary-label">Completed</span>
+						</div>
+						<div class="funnel-summary-stat">
+							<span class="funnel-summary-value" x-text="funnelOverallConversion + '%'"></span>
+							<span class="funnel-summary-label">Overall conversion</span>
+						</div>
+					</div>
+
+					<div class="gnat-section">
+						<template x-for="(step, i) in selectedFunnel.steps" :key="step.label">
+							<div>
+								<template x-if="i > 0">
+									<div class="funnel-step-connector">
+										<div class="funnel-step-connector-line"></div>
+										<span x-show="step.dropPct > 0">
+											<span class="funnel-drop-pct" x-text="'−' + step.dropPct + '%'"></span> dropped off
+										</span>
+										<span x-show="step.dropPct === 0">No drop-off</span>
+									</div>
+								</template>
+								<div class="funnel-step" tabindex="0" :data-tooltip="`${step.label}: ${step.count} visitors (${step.pctOfFirst}% of those who entered the funnel)`">
+									<div class="funnel-step-bar-track">
+										<div class="funnel-step-bar-fill" :style="`width: ${step.pctOfFirst}%`"></div>
+										<div class="funnel-step-content">
+											<span class="funnel-step-label" x-text="step.label"></span>
+											<span class="funnel-step-count" x-text="step.count"></span>
+										</div>
+									</div>
+								</div>
+							</div>
+						</template>
+					</div>
+				</div>
+			</template>
+
+		</div>
+		<!-- =========================== END FUNNELS ============================ -->
+
+		<!-- ============================ RETENTION ============================= -->
+		<div x-show="activeTab === 'retention'">
+
+			<template x-if="!retention.points || retention.points.length === 0">
+				<p class="gnat-empty">No retention data yet</p>
+			</template>
+
+			<template x-if="retention.points && retention.points.length > 0">
+				<div>
+					<p class="retention-summary">
+						Tracking <strong x-text="retention.cohort_size"></strong> visitors from their first visit,
+						measuring what share return on each later day.
+					</p>
+					<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Shows what percentage of a visitor cohort comes back to your site on each subsequent day after their first visit.">
+						<div class="chart-wrap">
+							<canvas id="retention-chart"></canvas>
+						</div>
+					</div>
+				</div>
+			</template>
+
+		</div>
+		<!-- ========================== END RETENTION ============================ -->
+
+		<!-- ============================== EXPORT =============================== -->
+		<div x-show="activeTab === 'export'">
+
+			<div class="gnat-section gnat-panel">
+				<h2 class="gnat-section-title">Export Data</h2>
+				<p class="export-copy">
+					Exports everything shown for the currently selected date range
+					(<strong x-text="customRangeLabel !== 'Custom' ? customRangeLabel : (range + ' days')"></strong>)
+					as a single file: stats, visitors over time, traffic sources, top pages,
+					top referrers, countries, devices, browsers, custom events, funnels, and retention.
+					Change the range at the top of the page before exporting to change what's included.
+				</p>
+
+				<div class="export-format-group">
+					<span class="export-format-label">Format</span>
+					<div class="pill-group">
+						<button class="pill" :class="exportFormat === 'csv' && 'is-active'" @click="exportFormat = 'csv'">CSV</button>
+						<button class="pill" :class="exportFormat === 'json' && 'is-active'" @click="exportFormat = 'json'">JSON</button>
+						<button class="pill" :class="exportFormat === 'jsonl' && 'is-active'" @click="exportFormat = 'jsonl'">JSON Lines</button>
+					</div>
+				</div>
+
+				<p class="export-format-note" x-text="exportFormatNote"></p>
+
+				<button class="export-download-btn" @click="downloadExport()">
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+						<polyline points="7 10 12 15 17 10"/>
+						<line x1="12" y1="15" x2="12" y2="3"/>
+					</svg>
+					<span x-text="'Download .' + exportFormat"></span>
+				</button>
+			</div>
+
+		</div>
+		<!-- ============================ END EXPORT ============================= -->
+
+		<!-- ================================ MCP ================================= -->
+		<div x-show="activeTab === 'mcp'">
+
+			<div class="gnat-section gnat-panel">
+				<h2 class="gnat-section-title">MCP Connection</h2>
+				<p class="export-copy">
+					Gnat ships with a built-in MCP server so AI agents can query your analytics
+					directly. This preview shows the shape that connection will take once it's
+					wired up here. Nothing below is a live endpoint yet.
+				</p>
+
+				<p class="mcp-block-label">Example server config</p>
+				<div class="mcp-code-block" tabindex="0">
+					<button class="mcp-copy-btn" @click="copyMcpBlock('config')" :aria-label="mcpCopied === 'config' ? 'Copied' : 'Copy config'">
+						<span x-text="mcpCopied === 'config' ? 'Copied' : 'Copy'"></span>
+					</button>
+					<pre><code>{
+  "mcpServers": {
+    "gnat": {
+      "url": "https://mcp.gnat.xyz/v1/sse",
+      "transport": "sse"
+    }
+  }
+}</code></pre>
+				</div>
+
+				<p class="mcp-block-label">Example query, once live</p>
+				<div class="mcp-code-block" tabindex="0">
+					<button class="mcp-copy-btn" @click="copyMcpBlock('query')" :aria-label="mcpCopied === 'query' ? 'Copied' : 'Copy query'">
+						<span x-text="mcpCopied === 'query' ? 'Copied' : 'Copy'"></span>
+					</button>
+					<pre><code>Ask your agent:
+"Using the gnat MCP server, get unique visitors
+and top referrers for the last 7 days."</code></pre>
+				</div>
+
+				<p class="mcp-footnote">Want early access when this ships? Reach out from the About tab.</p>
+			</div>
+
+		</div>
+		<!-- ============================== END MCP =============================== -->
+
+		<!-- =============================== ABOUT ================================ -->
+		<div x-show="activeTab === 'about'">
+
+			<div class="gnat-section gnat-panel about-panel">
+				<div class="about-mark" aria-hidden="true">
+					<svg viewBox="0 0 40 40" fill="none">
+						<path d="M18 16 C6 4, -8 10, 0 26 C6 38, 22 30, 18 20 Z" fill="var(--accent)" opacity="0.9"/>
+						<path d="M22 16 C34 4, 48 10, 40 26 C34 38, 18 30, 22 20 Z" fill="var(--accent)" opacity="0.55"/>
+						<circle cx="20" cy="22" r="7" fill="var(--fg)"/>
+					</svg>
+				</div>
+
+				<h2 class="about-title">About Gnat</h2>
+				<p class="about-tagline">Small, quiet, everywhere. Self-hosted analytics without the bloat.</p>
+
+				<p class="about-body">
+					Gnat is a single lightweight Go binary for self-hosted, privacy-first web
+					analytics. Download it, write a small config file, run it. No Docker, no
+					multi-service stack, no per-language SDKs. Any backend just POSTs JSON.
+				</p>
+				<p class="about-body">
+					Most self-hosted analytics tools force a tradeoff. GoatCounter is simple to
+					run but light on features. Plausible and PostHog are feature-rich but need a
+					stack of services to operate. Gnat aims to combine the deployment simplicity
+					of a single binary with real analytics depth, plus an AI-native layer that
+					none of the others offer yet: funnels, cohorts, retention curves,
+					auto-discovered path analysis, and a built-in MCP server so AI agents can
+					query your analytics directly.
+				</p>
+				<p class="about-body">
+					This dashboard you're looking at is the embedded UI, served straight out of
+					the Go binary. The project is in early development and not yet ready for
+					production use, so export and MCP access here are previews of where it's
+					headed.
+				</p>
+				<p class="about-body">
+					Gnat is built for one site per instance, matching the single-binary model.
+					Multi-site management across several properties from one dashboard is an
+					enterprise-scope feature and isn't planned here for now.
+				</p>
+
+				<div class="about-links">
+					<a class="about-link" href="https://var-raphael.vercel.app" target="_blank" rel="noopener noreferrer">
+						<i class="fa-solid fa-briefcase"></i>
+						<span>Portfolio and hire me</span>
+					</a>
+					<a class="about-link" href="mailto:samuelraphael925@gmail.com">
+						<i class="fa-solid fa-envelope"></i>
+						<span>samuelraphael925@gmail.com</span>
+					</a>
+					<a class="about-link" href="https://docs.gnat.xyz" target="_blank" rel="noopener noreferrer">
+						<i class="fa-solid fa-book"></i>
+						<span>Docs</span>
+						<span class="about-link-badge">coming soon</span>
+					</a>
+				</div>
+
+				<p class="about-footnote">
+					Found a bug, or want to report an issue? Reach out at the email above.
+					That's also the fastest way to talk outreach or freelance work.
+				</p>
+			</div>
+
+		</div>
+		<!-- ============================= END ABOUT =============================== -->
+
+	</main>
+
+	<!-- shared modal for every "View All" -->
+	<div class="modal-backdrop" x-show="modalOpen" x-cloak @click.self="closeModal()" @keydown.escape.window="closeModal()">
+		<div class="modal-panel" x-show="modalOpen" x-transition>
+			<div class="modal-head">
+				<span class="modal-title" x-text="modalTitle"></span>
+				<button class="modal-close" @click="closeModal()" aria-label="Close">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="18" y1="6" x2="6" y2="18"/>
+						<line x1="6" y1="6" x2="18" y2="18"/>
+					</svg>
+				</button>
+			</div>
+			<div class="modal-body">
+				<template x-for="row in modalRows" :key="row.code || row.label || row.type || row.name">
+					<div class="breakdown-row">
+						<template x-if="modalKind === 'countries'">
+							<span class="breakdown-row-icon flag-icon">
+								<img :src="countryFlagUrl(row.code)" :alt="row.name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
+								<span class="flag-emoji-fallback" x-text="countryFlagEmoji(row.code)" style="display:none;"></span>
+							</span>
+						</template>
+						<template x-if="modalKind === 'devices'">
+							<span class="breakdown-row-icon"><i :class="deviceIcon(row.type)" :style="`color: ${deviceColor(row.type)}`"></i></span>
+						</template>
+						<template x-if="modalKind === 'browsers'">
+							<span class="breakdown-row-icon"><i :class="browserIcon(row.name)" :style="`color: ${browserColor(row.name)}`"></i></span>
+						</template>
+						<template x-if="modalKind === 'referrers'">
+							<span class="breakdown-row-icon"><i :class="referrerIcon(row)" :style="`color: ${referrerColor(row)}`"></i></span>
+						</template>
+						<template x-if="modalKind === 'events'">
+							<span class="breakdown-row-icon"><i class="fa-solid fa-diamond" style="color:#f472b6"></i></span>
+						</template>
+						<span class="breakdown-row-label" x-text="row.name || row.label || row.type || row.path"></span>
+						<template x-if="modalKind === 'countries'">
+							<span class="tier-badge" :data-tier="row.tier" x-text="'TIER ' + row.tier"></span>
+						</template>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+						<template x-if="row.pct !== undefined">
+							<span class="modal-row-pct" x-text="row.pct + '%'"></span>
+						</template>
+					</div>
+				</template>
+			</div>
+		</div>
+	</div>
+
+	<!-- event property drill-down modal -->
+	<div class="modal-backdrop" x-show="eventDetailOpen" x-cloak @click.self="closeEventDetail()" @keydown.escape.window="closeEventDetail()">
+		<div class="modal-panel" x-show="eventDetailOpen" x-transition>
+			<div class="modal-head">
+				<span class="modal-title" x-text="eventDetail?.label"></span>
+				<button class="modal-close" @click="closeEventDetail()" aria-label="Close">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="18" y1="6" x2="6" y2="18"/>
+						<line x1="6" y1="6" x2="18" y2="18"/>
+					</svg>
+				</button>
+			</div>
+			<div class="modal-body">
+				<p class="event-detail-total">
+					<span x-text="eventDetail?.count"></span> total fires in the selected range
+				</p>
+
+				<template x-if="!eventDetail?.properties || eventDetail.properties.length === 0">
+					<p class="gnat-empty">No property data recorded for this event</p>
+				</template>
+
+				<template x-for="prop in eventDetail?.properties || []" :key="prop.name">
+					<div class="event-detail-property">
+						<h3 class="event-detail-property-name" x-text="prop.name"></h3>
+						<template x-for="item in propertyBreakdownRows(prop)" :key="item.value">
+							<div class="breakdown-row">
+								<div class="breakdown-row-bar" :style="`width: ${item.pct}%`"></div>
+								<span class="breakdown-row-label" x-text="item.value"></span>
+								<span class="breakdown-row-count" x-text="item.count"></span>
+							</div>
+						</template>
+					</div>
+				</template>
+			</div>
+		</div>
+	</div>
+
+	<script src="/dashboard.js"></script>
+</body>
+</html>

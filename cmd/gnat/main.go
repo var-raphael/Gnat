@@ -55,11 +55,40 @@ func main() {
 	mux.HandleFunc("/api/stats/funnels", query.FunnelsHandler(db, cfg.APIKey))
 	mux.HandleFunc("/api/stats/paths", query.PathsHandler(db, cfg.APIKey))
 	mux.HandleFunc("/api/stats/retention", query.RetentionHandler(db, cfg.APIKey))
-
+	mux.HandleFunc("/api/export", query.ExportHandler(db, cfg.APIKey))
+	
 	mux.HandleFunc("/tracker.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		http.ServeFile(w, r, "web/static/tracker.js")
 	})
+	
+	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	http.ServeFile(w, r, "web/templates/dashboard.html")
+})
+mux.HandleFunc("/dashboard.css", func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css")
+	http.ServeFile(w, r, "web/static/dashboard.css")
+})
+
+mux.HandleFunc("/dashboard.js", func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	http.ServeFile(w, r, "web/static/dashboard.js")
+})
+
+mux.HandleFunc("/mock-data.json", func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	http.ServeFile(w, r, "web/static/mock-data.json")
+})
+mux.HandleFunc("/country-tiers.json", func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	http.ServeFile(w, r, "web/static/country-tiers.json")
+})
+
+mux.HandleFunc("/alpine.min.js", func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	http.ServeFile(w, r, "web/static/alpine.min.js")
+})
 
 	addr := ":" + strconv.Itoa(cfg.Server.BindPort)
 	if err := http.ListenAndServe(addr, mux); err != nil {
