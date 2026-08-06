@@ -2,7 +2,7 @@
   "stats": {
     "unique_visitors_today": { "value": 13, "delta_pct": 333.3 },
     "pageviews_today": { "value": 33, "delta_pct": 450.0 },
-    "live_visitors": { "value": 1 },
+    "live_visitors": { "value": 5 },
     "monthly_usage": { "value": 106, "limit": 10000 },
     "avg_time_on_page_today": { "value_seconds": 11, "delta_pct": -52.2 },
     "custom_events_today": { "value": 4, "delta_pct": 33.3, "unique_events": 2 },
@@ -150,7 +150,11 @@
   ],
 
   "live_visitors": [
-    { "id": "v_8f2a", "page": "/dashboard", "country_code": "NG", "country_name": "Nigeria", "device": "mobile", "browser": "Chrome", "active_seconds": 42 }
+    { "id": "v_8f2a", "page": "/dashboard", "country_code": "NG", "country_name": "Nigeria", "device": "mobile", "browser": "Chrome", "active_seconds": 42 },
+    { "id": "v_3c91", "page": "/dashboard", "country_code": "US", "country_name": "United States", "device": "desktop", "browser": "Safari", "active_seconds": 187 },
+    { "id": "v_5d02", "page": "/dashboard", "country_code": "DE", "country_name": "Germany", "device": "desktop", "browser": "Firefox", "active_seconds": 63 },
+    { "id": "v_7e14", "page": "/embed", "country_code": "NG", "country_name": "Nigeria", "device": "mobile", "browser": "Chrome", "active_seconds": 21 },
+    { "id": "v_9a55", "page": "/export", "country_code": "GH", "country_name": "Ghana", "device": "tablet", "browser": "Safari", "active_seconds": 9 }
   ],
 
   "ai_review": {

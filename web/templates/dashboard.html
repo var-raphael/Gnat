@@ -11,6 +11,44 @@
 </head>
 <body x-data="gnatDashboard()" x-init="init()" :data-theme="theme" data-theme="dark">
 
+	<!-- login gate: blocks the dashboard until authenticated.
+	     Mock only for now, checks against a hardcoded password ("test")
+	     in dashboard.js. A real version would check this against a
+	     value set in the env file rather than a value shipped in the
+	     client-side bundle, since anything in dashboard.js is visible
+	     to anyone who opens dev tools. -->
+	<div class="login-gate" x-show="!authenticated" x-cloak>
+		<div class="login-card">
+			<div class="login-mark" aria-hidden="true">
+				<svg viewBox="0 0 40 40" fill="none">
+					<path d="M18 16 C6 4, -8 10, 0 26 C6 38, 22 30, 18 20 Z" fill="var(--accent)" opacity="0.9"/>
+					<path d="M22 16 C34 4, 48 10, 40 26 C34 38, 18 30, 22 20 Z" fill="var(--accent)" opacity="0.55"/>
+					<circle cx="20" cy="22" r="7" fill="var(--fg)"/>
+				</svg>
+			</div>
+			<h1 class="login-title">Gnat</h1>
+			<p class="login-subtitle">Enter your dashboard password to continue.</p>
+
+			<form @submit.prevent="attemptLogin()">
+				<input
+					type="password"
+					class="login-input"
+					x-model="loginPassword"
+					placeholder="Password"
+					autocomplete="current-password"
+					:class="loginError && 'is-error'"
+					x-ref="loginInput"
+				/>
+				<p class="login-error" x-show="loginError" x-text="loginError"></p>
+				<button type="submit" class="login-submit-btn">Unlock</button>
+			</form>
+
+			<p class="login-mock-note">Mockup only. Password is <code>test</code>.</p>
+		</div>
+	</div>
+
+	<div x-show="authenticated">
+
 	<header class="gnat-header">
 		<div class="gnat-brand" role="img" aria-label="gnat">
 			<svg class="gnat-mark" viewBox="0 0 40 40" fill="none">
@@ -45,7 +83,7 @@
 				</div>
 			</div>
 
-			<button class="theme-toggle" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+			<button class="theme-toggle theme-toggle-theme" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
 				<svg x-show="theme === 'dark'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<circle cx="12" cy="12" r="5"/>
 					<line x1="12" y1="1" x2="12" y2="3"/>
@@ -59,6 +97,14 @@
 				</svg>
 				<svg x-show="theme === 'light'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+				</svg>
+			</button>
+
+			<button class="theme-toggle theme-toggle-logout" @click="logout()" aria-label="Log out" data-tooltip="Log out">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+					<polyline points="16 17 21 12 16 7"/>
+					<line x1="21" y1="12" x2="9" y2="12"/>
 				</svg>
 			</button>
 		</div>
@@ -144,31 +190,65 @@
 		</div>
 
 		<!-- live visitors -->
-		<div class="gnat-section gnat-panel live-visitors-panel" tabindex="0" data-tooltip="Everyone with an active session on your site right now, updated in near real time: what page they're on, where they're from, and how long they've been active." x-show="liveVisitors.length > 0">
+		<div class="gnat-section gnat-panel live-visitors-panel" x-show="liveVisitors.length > 0">
 			<div class="gnat-section-head">
-				<h2 class="gnat-section-title">
+				<h2 class="gnat-section-title" tabindex="0" data-tooltip="Everyone with an active session on your site right now, grouped by the page they're on. Expand a page to see who's there: country, device, and how long they've been active.">
 					<span class="live-dot" aria-hidden="true"></span>
 					Live Visitors
+					<span class="live-count-badge" x-text="liveVisitors.length"></span>
 				</h2>
+				<button class="view-all-btn" @click="openLiveVisitorsModal()">See All ›</button>
 			</div>
-			<template x-for="v in liveVisitors" :key="v.id">
-				<div class="live-visitor-row">
-					<span class="live-visitor-page" x-text="v.page"></span>
-					<span class="live-visitor-meta">
-						<span class="breakdown-row-icon flag-icon">
-							<img :src="countryFlagUrl(v.country_code)" :alt="v.country_name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
-							<span class="flag-emoji-fallback" x-text="countryFlagEmoji(v.country_code)" style="display:none;"></span>
-						</span>
-						<span x-text="v.country_name"></span>
-						<span class="live-visitor-sep">·</span>
-						<i :class="deviceIcon(v.device)" :style="`color: ${deviceColor(v.device)}`"></i>
-						<span x-text="v.device"></span>
-						<span class="live-visitor-sep">·</span>
-						<i :class="browserIcon(v.browser)" :style="`color: ${browserColor(v.browser)}`"></i>
-						<span x-text="v.browser"></span>
-						<span class="live-visitor-sep">·</span>
-						<span class="live-visitor-duration" x-text="formatDuration(v.active_seconds) + ' active'"></span>
-					</span>
+
+			<div class="live-filter-row">
+				<span class="export-format-label">Filter</span>
+				<select class="live-filter-select" x-model="liveFilterField" @change="liveFilterValue = ''">
+					<option value="">All visitors</option>
+					<option value="country_name">By country</option>
+					<option value="device">By device</option>
+				</select>
+				<select class="live-filter-select" x-show="liveFilterField" x-model="liveFilterValue">
+					<option value="">Any</option>
+					<template x-for="opt in liveFilterOptions" :key="opt">
+						<option :value="opt" x-text="opt"></option>
+					</template>
+				</select>
+			</div>
+
+			<template x-if="liveVisitorGroups.length === 0">
+				<p class="gnat-empty">No active visitors match this filter</p>
+			</template>
+
+			<template x-for="group in liveVisitorGroups" :key="group.page">
+				<div class="live-page-group">
+					<div class="live-page-group-head" @click="toggleLiveGroup(group.page)">
+						<i class="fa-solid fa-chevron-right live-group-chevron" :class="expandedLiveGroups.includes(group.page) && 'is-open'"></i>
+						<span class="live-visitor-page" x-text="group.page"></span>
+						<span class="live-page-group-count" x-text="group.visitors.length + (group.visitors.length === 1 ? ' visitor' : ' visitors')"></span>
+					</div>
+					<template x-if="expandedLiveGroups.includes(group.page)">
+						<div class="live-page-group-body">
+							<template x-for="v in group.visitors" :key="v.id">
+								<div class="live-visitor-row">
+									<span class="live-visitor-meta">
+										<span class="breakdown-row-icon flag-icon">
+											<img :src="countryFlagUrl(v.country_code)" :alt="v.country_name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
+											<span class="flag-emoji-fallback" x-text="countryFlagEmoji(v.country_code)" style="display:none;"></span>
+										</span>
+										<span x-text="v.country_name"></span>
+										<span class="live-visitor-sep">·</span>
+										<i :class="deviceIcon(v.device)" :style="`color: ${deviceColor(v.device)}`"></i>
+										<span x-text="v.device"></span>
+										<span class="live-visitor-sep">·</span>
+										<i :class="browserIcon(v.browser)" :style="`color: ${browserColor(v.browser)}`"></i>
+										<span x-text="v.browser"></span>
+										<span class="live-visitor-sep">·</span>
+										<span class="live-visitor-duration" x-text="formatDuration(v.active_seconds) + ' active'"></span>
+									</span>
+								</div>
+							</template>
+						</div>
+					</template>
 				</div>
 			</template>
 		</div>
@@ -552,9 +632,39 @@ and top referrers for the last 7 days."</code></pre>
 				</p>
 				<p class="about-body">
 					Gnat is built for one site per instance, matching the single-binary model.
-					Multi-site management across several properties from one dashboard is an
-					enterprise-scope feature and isn't planned here for now.
+					Features that only make sense once a team or several properties are involved
+					are being tracked separately rather than bolted onto the core tool.
 				</p>
+
+				<div class="about-roadmap">
+					<h3 class="about-roadmap-title">On the roadmap (enterprise)</h3>
+					<p class="about-roadmap-note">
+						None of this exists yet. Listed here so it's clear what's planned versus
+						what's already in the binary today.
+					</p>
+					<ul class="about-roadmap-list">
+						<li>
+							<i class="fa-solid fa-globe"></i>
+							<span><strong>Multi-site management.</strong> One dashboard across several properties, instead of one instance per site.</span>
+						</li>
+						<li>
+							<i class="fa-solid fa-users"></i>
+							<span><strong>SSO and team access control.</strong> Real accounts and roles, instead of one shared API key for everyone.</span>
+						</li>
+						<li>
+							<i class="fa-solid fa-headset"></i>
+							<span><strong>Priority support.</strong> A direct line for setup help and issues, rather than best-effort via email.</span>
+						</li>
+						<li>
+							<i class="fa-solid fa-cloud"></i>
+							<span><strong>Managed hosting.</strong> For anyone who wants Gnat without running and maintaining the binary themselves.</span>
+						</li>
+						<li>
+							<i class="fa-solid fa-clipboard-list"></i>
+							<span><strong>Audit logs.</strong> A record of who exported data, and who changed configuration, once more than one person has access.</span>
+						</li>
+					</ul>
+				</div>
 
 				<div class="about-links">
 					<a class="about-link" href="https://var-raphael.vercel.app" target="_blank" rel="noopener noreferrer">
@@ -597,7 +707,7 @@ and top referrers for the last 7 days."</code></pre>
 			</div>
 			<div class="modal-body">
 				<template x-for="row in modalRows" :key="row.code || row.label || row.type || row.name">
-					<div class="breakdown-row">
+					<div class="breakdown-row" :class="modalKind === 'events' && 'breakdown-row-clickable'" @click="modalKind === 'events' && openEventDetailFromModal(row)">
 						<template x-if="modalKind === 'countries'">
 							<span class="breakdown-row-icon flag-icon">
 								<img :src="countryFlagUrl(row.code)" :alt="row.name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
@@ -623,6 +733,92 @@ and top referrers for the last 7 days."</code></pre>
 						<span class="breakdown-row-count" x-text="row.count"></span>
 						<template x-if="row.pct !== undefined">
 							<span class="modal-row-pct" x-text="row.pct + '%'"></span>
+						</template>
+						<template x-if="modalKind === 'events'">
+							<i class="fa-solid fa-chevron-right event-row-chevron"></i>
+						</template>
+					</div>
+				</template>
+			</div>
+		</div>
+	</div>
+
+	<!-- live visitors: see all modal -->
+	<div class="modal-backdrop" x-show="liveModalOpen" x-cloak @click.self="closeLiveVisitorsModal()" @keydown.escape.window="closeLiveVisitorsModal()">
+		<div class="modal-panel" x-show="liveModalOpen" x-transition>
+			<div class="modal-head">
+				<span class="modal-title">Live Visitors</span>
+				<button class="modal-close" @click="closeLiveVisitorsModal()" aria-label="Close">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="18" y1="6" x2="6" y2="18"/>
+						<line x1="6" y1="6" x2="18" y2="18"/>
+					</svg>
+				</button>
+			</div>
+			<div class="modal-body">
+				<div class="pill-group live-modal-view-toggle">
+					<button class="pill" :class="liveModalView === 'page' && 'is-active'" @click="liveModalView = 'page'">By Page</button>
+					<button class="pill" :class="liveModalView === 'flat' && 'is-active'" @click="liveModalView = 'flat'">All Sessions</button>
+				</div>
+
+				<template x-if="liveModalView === 'page'">
+					<div>
+						<template x-for="group in liveVisitorGroups" :key="group.page">
+							<div class="live-page-group">
+								<div class="live-page-group-head" @click="toggleLiveGroup(group.page)">
+									<i class="fa-solid fa-chevron-right live-group-chevron" :class="expandedLiveGroups.includes(group.page) && 'is-open'"></i>
+									<span class="live-visitor-page" x-text="group.page"></span>
+									<span class="live-page-group-count" x-text="group.visitors.length + (group.visitors.length === 1 ? ' visitor' : ' visitors')"></span>
+								</div>
+								<template x-if="expandedLiveGroups.includes(group.page)">
+									<div class="live-page-group-body">
+										<template x-for="v in group.visitors" :key="v.id">
+											<div class="live-visitor-row">
+												<span class="live-visitor-meta">
+													<span class="breakdown-row-icon flag-icon">
+														<img :src="countryFlagUrl(v.country_code)" :alt="v.country_name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
+														<span class="flag-emoji-fallback" x-text="countryFlagEmoji(v.country_code)" style="display:none;"></span>
+													</span>
+													<span x-text="v.country_name"></span>
+													<span class="live-visitor-sep">·</span>
+													<i :class="deviceIcon(v.device)" :style="`color: ${deviceColor(v.device)}`"></i>
+													<span x-text="v.device"></span>
+													<span class="live-visitor-sep">·</span>
+													<i :class="browserIcon(v.browser)" :style="`color: ${browserColor(v.browser)}`"></i>
+													<span x-text="v.browser"></span>
+													<span class="live-visitor-sep">·</span>
+													<span class="live-visitor-duration" x-text="formatDuration(v.active_seconds) + ' active'"></span>
+												</span>
+											</div>
+										</template>
+									</div>
+								</template>
+							</div>
+						</template>
+					</div>
+				</template>
+
+				<template x-if="liveModalView === 'flat'">
+					<div>
+						<template x-for="v in liveVisitors" :key="v.id">
+							<div class="live-visitor-row live-visitor-row-flat">
+								<span class="live-visitor-page" x-text="v.page"></span>
+								<span class="live-visitor-meta">
+									<span class="breakdown-row-icon flag-icon">
+										<img :src="countryFlagUrl(v.country_code)" :alt="v.country_name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
+										<span class="flag-emoji-fallback" x-text="countryFlagEmoji(v.country_code)" style="display:none;"></span>
+									</span>
+									<span x-text="v.country_name"></span>
+									<span class="live-visitor-sep">·</span>
+									<i :class="deviceIcon(v.device)" :style="`color: ${deviceColor(v.device)}`"></i>
+									<span x-text="v.device"></span>
+									<span class="live-visitor-sep">·</span>
+									<i :class="browserIcon(v.browser)" :style="`color: ${browserColor(v.browser)}`"></i>
+									<span x-text="v.browser"></span>
+									<span class="live-visitor-sep">·</span>
+									<span class="live-visitor-duration" x-text="formatDuration(v.active_seconds) + ' active'"></span>
+								</span>
+							</div>
 						</template>
 					</div>
 				</template>
@@ -665,6 +861,8 @@ and top referrers for the last 7 days."</code></pre>
 				</template>
 			</div>
 		</div>
+	</div>
+
 	</div>
 
 	<script src="/dashboard.js"></script>

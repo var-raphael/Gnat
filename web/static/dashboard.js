@@ -55,6 +55,16 @@ function gnatDashboard() {
 		range: "7", // "7" | "30" | "90" | "custom"
 		activeTab: "overview", // overview | funnels | retention
 
+		// auth
+		// Mock only: checks against a hardcoded password shipped in this
+		// file. A real version has to check this server-side against a
+		// value from the env file, since anything here is visible to
+		// anyone who opens dev tools, a client-side check can gate the
+		// UI but can never actually secure anything on its own.
+		authenticated: false,
+		loginPassword: "",
+		loginError: "",
+
 		// custom date range popover
 		customRangeOpen: false,
 		customFrom: "",
@@ -79,6 +89,11 @@ function gnatDashboard() {
 
 		// live visitors
 		liveVisitors: [],
+		liveFilterField: "", // "" | "country_name" | "device"
+		liveFilterValue: "", // selected value within liveFilterField
+		expandedLiveGroups: [], // page paths currently expanded in the grouped view
+		liveModalOpen: false,
+		liveModalView: "page", // "page" | "flat" — shown inside the See All modal
 
 		aiReview: null,
 		aiReviewLoading: false,
@@ -110,7 +125,44 @@ function gnatDashboard() {
 		init() {
 			const saved = localStorage.getItem("_gnat_theme");
 			this.theme = saved || "dark";
-			this.loadAll();
+
+			// Persisted session check: a real version needs an actual
+			// server-issued session token here, not just a flag in
+			// localStorage, since a flag alone can be set by anyone
+			// through dev tools without ever knowing the password.
+			this.authenticated = localStorage.getItem("_gnat_session") === "1";
+
+			if (this.authenticated) {
+				this.loadAll();
+			} else {
+				// Focus the password field once the login gate has
+				// actually rendered, rather than on the frame it's still
+				// x-cloak'd, so the cursor lands there immediately for
+				// anyone typing right away.
+				this.$nextTick(() => this.$refs.loginInput?.focus());
+			}
+		},
+
+		attemptLogin() {
+			// Mock check only, see the note on `authenticated` above for
+			// why this can never be a real security boundary as written.
+			if (this.loginPassword === "test") {
+				this.authenticated = true;
+				this.loginError = "";
+				this.loginPassword = "";
+				localStorage.setItem("_gnat_session", "1");
+				this.loadAll();
+			} else {
+				this.loginError = "Incorrect password. Try again.";
+				this.loginPassword = "";
+				this.$nextTick(() => this.$refs.loginInput?.focus());
+			}
+		},
+
+		logout() {
+			this.authenticated = false;
+			localStorage.removeItem("_gnat_session");
+			this.$nextTick(() => this.$refs.loginInput?.focus());
 		},
 
 		toggleTheme() {
@@ -482,6 +534,61 @@ function gnatDashboard() {
 		loadLiveVisitors(visitors) {
 			if (!visitors) return;
 			this.liveVisitors = visitors;
+			// A fresh load can drop pages/values the current filter or
+			// expanded-group state referred to; resetting keeps the UI
+			// from silently showing a stale, now-meaningless selection.
+			this.liveFilterValue = "";
+			this.expandedLiveGroups = [];
+		},
+
+		// Visitors matching the current filter (field + value). With no
+		// field selected, or a field selected but no value yet, every
+		// visitor passes through unfiltered.
+		get filteredLiveVisitors() {
+			if (!this.liveFilterField || !this.liveFilterValue) return this.liveVisitors;
+			return this.liveVisitors.filter((v) => v[this.liveFilterField] === this.liveFilterValue);
+		},
+
+		// The distinct values available for whichever field is currently
+		// selected in the filter, so the second dropdown only ever offers
+		// choices that actually exist in the live data right now.
+		get liveFilterOptions() {
+			if (!this.liveFilterField) return [];
+			const values = this.liveVisitors.map((v) => v[this.liveFilterField]);
+			return Array.from(new Set(values)).sort();
+		},
+
+		// Groups the filtered visitors by page, preserving first-seen page
+		// order (rather than alphabetical) so the busiest/most-recently-
+		// active pages tend to surface first, matching how the rest of
+		// the dashboard orders breakdown lists by relevance, not sorting.
+		get liveVisitorGroups() {
+			const groups = [];
+			const byPage = new Map();
+			for (const v of this.filteredLiveVisitors) {
+				if (!byPage.has(v.page)) {
+					const group = { page: v.page, visitors: [] };
+					byPage.set(v.page, group);
+					groups.push(group);
+				}
+				byPage.get(v.page).visitors.push(v);
+			}
+			return groups;
+		},
+
+		toggleLiveGroup(page) {
+			const i = this.expandedLiveGroups.indexOf(page);
+			if (i === -1) this.expandedLiveGroups.push(page);
+			else this.expandedLiveGroups.splice(i, 1);
+		},
+
+		openLiveVisitorsModal() {
+			this.liveModalView = "page";
+			this.liveModalOpen = true;
+		},
+
+		closeLiveVisitorsModal() {
+			this.liveModalOpen = false;
 		},
 
 		loadAIReview(review) {
@@ -970,6 +1077,16 @@ and top referrers for the last 7 days."`,
 		openEventDetail(row) {
 			this.eventDetail = row;
 			this.eventDetailOpen = true;
+		},
+
+		// Same drill-down, but entered from inside the shared "View All"
+		// modal rather than the main Overview list. Closes that modal
+		// first rather than stacking a second backdrop on top of it,
+		// which otherwise leaves two modal-backdrops fighting over Escape
+		// and click-outside handling.
+		openEventDetailFromModal(row) {
+			this.closeModal();
+			this.openEventDetail(row);
 		},
 
 		closeEventDetail() {

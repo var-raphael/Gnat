@@ -115,7 +115,7 @@ body {
 	   orientation change, or while a card's own hover-lift transform is
 	   still animating), the canvas can end up a few px wider than its
 	   container and force the whole page to scroll horizontally on
-	   mobile. overflow-x:hidden here is the hard backstop — individual
+	   mobile. overflow-x:hidden here is the hard backstop, individual
 	   containers below are also capped to max-width:100% so this should
 	   rarely even need to engage. */
 	overflow-x: hidden;
@@ -129,6 +129,126 @@ body {
 	font-size: 14px;
 	line-height: 1.5;
 	-webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------
+   Login gate
+--------------------------------------------------------------------- */
+
+.login-gate {
+	position: fixed;
+	inset: 0;
+	z-index: 500;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 20px;
+	background:
+		radial-gradient(ellipse 900px 480px at 15% -8%, var(--accent-faint), transparent 60%),
+		radial-gradient(ellipse 700px 420px at 100% 8%, var(--accent-2-faint), transparent 55%),
+		var(--bg);
+}
+
+.login-card {
+	width: 100%;
+	max-width: 340px;
+	background: var(--panel-bg);
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	box-shadow: var(--panel-shadow);
+	padding: 32px 28px;
+	text-align: center;
+}
+
+.login-mark {
+	width: 40px;
+	height: 40px;
+	margin: 0 auto 16px;
+	filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+.login-mark svg {
+	width: 100%;
+	height: 100%;
+}
+
+.login-title {
+	font-family: var(--font-display);
+	font-size: 22px;
+	font-weight: 600;
+	color: var(--fg);
+	margin: 0 0 6px 0;
+}
+
+.login-subtitle {
+	font-size: 13px;
+	color: var(--fg-muted);
+	margin: 0 0 22px 0;
+	line-height: 1.5;
+}
+
+.login-input {
+	width: 100%;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	color: var(--fg);
+	font-family: var(--font-mono);
+	font-size: 14px;
+	padding: 11px 14px;
+	border-radius: 8px;
+	text-align: center;
+	letter-spacing: 0.02em;
+}
+.login-input:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+.login-input.is-error {
+	border-color: var(--danger);
+}
+
+.login-error {
+	font-size: 12px;
+	color: var(--danger);
+	margin: 10px 0 0 0;
+}
+
+.login-submit-btn {
+	width: 100%;
+	background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white 8%), var(--accent));
+	border: 1px solid var(--accent);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: 13px;
+	font-weight: 600;
+	padding: 11px 0;
+	border-radius: 8px;
+	cursor: pointer;
+	margin-top: 16px;
+	box-shadow: 0 4px 12px -4px var(--accent-glow);
+	transition: opacity 0.15s ease;
+}
+[data-theme="light"] .login-submit-btn {
+	color: #ffffff;
+}
+.login-submit-btn:hover {
+	opacity: 0.92;
+}
+.login-submit-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.login-mock-note {
+	font-size: 11px;
+	color: var(--fg-muted);
+	margin: 20px 0 0 0;
+}
+.login-mock-note code {
+	font-family: var(--font-mono);
+	background: var(--accent-faint);
+	color: var(--accent);
+	padding: 2px 6px;
+	border-radius: 4px;
 }
 
 .gnat-header {
@@ -149,52 +269,6 @@ body {
 @media (min-width: 640px) {
 	.gnat-header {
 		padding: 20px 28px;
-	}
-}
-
-/* Below ~560px the brand, date pills, and theme toggle can't share one
-   row without squeezing — this was the actual cause of cards appearing
-   to overlap the header in a prior pass: an unwrapped flex header forced
-   everything to fight for space and threw off every element below it.
-   Stack brand+toggle on one row and let the pill group take its own
-   full-width row underneath. */
-@media (max-width: 560px) {
-	.gnat-header {
-		flex-wrap: wrap;
-	}
-	.gnat-header > .gnat-brand {
-		flex: 1;
-		min-width: 0;
-	}
-	/* Theme toggle stays paired with the brand on row one; the date-range
-	   controls (pills + custom popover) become their own full-width row
-	   below, rather than all three fighting for space on one line.
-	   display:contents lifts date-range-wrap and theme-toggle to be
-	   direct flex items of .gnat-header (alongside .gnat-brand) so
-	   `order` can place them independently instead of moving as a pair. */
-	.gnat-controls {
-		display: contents;
-	}
-	.gnat-header > .gnat-brand {
-		order: 1;
-	}
-	.theme-toggle {
-		order: 2;
-		flex-shrink: 0;
-	}
-	.date-range-wrap {
-		order: 3;
-		flex-basis: 100%;
-		min-width: 0;
-	}
-	.pill-group {
-		width: 100%;
-	}
-	.pill {
-		flex: 1;
-		text-align: center;
-		padding-left: 4px;
-		padding-right: 4px;
 	}
 }
 
@@ -864,6 +938,18 @@ body {
 	gap: 8px;
 }
 
+.live-count-badge {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--accent);
+	background: var(--accent-faint);
+	border-radius: 20px;
+	padding: 1px 8px;
+	text-transform: none;
+	letter-spacing: 0;
+}
+
 .live-dot {
 	width: 7px;
 	height: 7px;
@@ -884,18 +970,85 @@ body {
 	}
 }
 
+.live-filter-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-bottom: 14px;
+}
+
+.live-filter-select {
+	background: var(--bg);
+	border: 1px solid var(--border);
+	color: var(--fg);
+	font-family: var(--font-body);
+	font-size: 12px;
+	padding: 6px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+}
+.live-filter-select:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.live-page-group {
+	border-bottom: 1px solid var(--border);
+}
+.live-page-group:last-child {
+	border-bottom: none;
+}
+
+.live-page-group-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 0;
+	cursor: pointer;
+	border-radius: 6px;
+	transition: background 0.12s ease;
+}
+.live-page-group-head:hover {
+	background: var(--accent-faint);
+}
+
+.live-group-chevron {
+	font-size: 10px;
+	color: var(--fg-muted);
+	flex-shrink: 0;
+	transition: transform 0.15s ease;
+}
+.live-group-chevron.is-open {
+	transform: rotate(90deg);
+}
+
+.live-page-group-count {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--fg-muted);
+	margin-left: auto;
+}
+
+.live-page-group-body {
+	padding: 0 0 6px 22px;
+}
+
 .live-visitor-row {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	flex-wrap: wrap;
 	gap: 6px 14px;
-	padding: 10px 0;
+	padding: 8px 0;
 	font-size: 13px;
-	border-bottom: 1px solid var(--border);
+	border-bottom: 1px solid var(--border-soft);
 }
 .live-visitor-row:last-child {
 	border-bottom: none;
+}
+.live-visitor-row-flat {
+	border-bottom: 1px solid var(--border);
 }
 
 .live-visitor-page {
@@ -927,6 +1080,10 @@ body {
 .live-visitor-duration {
 	font-family: var(--font-mono);
 	color: var(--accent);
+}
+
+.live-modal-view-toggle {
+	margin-bottom: 16px;
 }
 
 /* ---------------------------------------------------------------------
@@ -1312,6 +1469,13 @@ body {
 	color: var(--fg-muted);
 	font-size: 11px;
 	margin-left: 8px;
+}
+
+.event-row-chevron {
+	color: var(--fg-muted);
+	font-size: 11px;
+	margin-left: 4px;
+	flex-shrink: 0;
 }
 
 /* ---------------------------------------------------------------------
@@ -1749,6 +1913,63 @@ body {
 	flex-shrink: 0;
 }
 
+.about-roadmap {
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 16px 18px;
+	margin: 4px 0 20px 0;
+}
+
+.about-roadmap-title {
+	font-family: var(--font-display);
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--accent-2);
+	margin: 0 0 6px 0;
+}
+
+.about-roadmap-note {
+	font-size: 12px;
+	color: var(--fg-muted);
+	line-height: 1.5;
+	margin: 0 0 14px 0;
+}
+
+.about-roadmap-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.about-roadmap-list li {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: var(--fg-muted);
+}
+
+.about-roadmap-list li i {
+	color: var(--accent-2);
+	width: 14px;
+	text-align: center;
+	flex-shrink: 0;
+	margin-top: 2px;
+	font-size: 12px;
+}
+
+.about-roadmap-list li strong {
+	color: var(--fg);
+	font-weight: 600;
+}
+
 .about-footnote {
 	font-size: 12px;
 	line-height: 1.6;
@@ -1756,4 +1977,61 @@ body {
 	border-top: 1px solid var(--border);
 	padding-top: 16px;
 	margin: 4px 0 0 0;
+}
+
+/* ---------------------------------------------------------------------
+   Mobile header layout override
+   Placed at the very end of the file on purpose. Earlier attempts at
+   this lived up near .gnat-header's other rules, but the base
+   `.gnat-controls { display: flex }` rule happened to be defined later
+   in the file than that media query, and at equal specificity, source
+   order wins the tie, so the base flex rule was silently overriding
+   `display: contents` on every viewport, not just wide ones. That let
+   date-range-wrap render as a single flex child inside .gnat-controls
+   instead of participating in the grid below, which is what pushed it
+   into row one's leftover space instead of its own row. Putting this
+   block last guarantees it comes after every other rule touching
+   .gnat-header, .gnat-controls, or .date-range-wrap, so this can't
+   regress again just because something earlier in the file changes.
+
+   Layout: an explicit two-row grid. Row one is the brand plus both
+   icon buttons; row two is the full-width date range control. Explicit
+   named grid areas can't wrap into the wrong place the way a flex
+   `order` + wrap approach could.
+--------------------------------------------------------------------- */
+@media (max-width: 560px) {
+	.gnat-header {
+		display: grid;
+		grid-template-columns: 1fr auto auto;
+		grid-template-areas:
+			"brand theme logout"
+			"range range range";
+		align-items: center;
+		gap: 10px 12px;
+	}
+	.gnat-header > .gnat-brand {
+		grid-area: brand;
+	}
+	.gnat-controls {
+		display: contents;
+	}
+	.theme-toggle-theme {
+		grid-area: theme;
+	}
+	.theme-toggle-logout {
+		grid-area: logout;
+	}
+	.date-range-wrap {
+		grid-area: range;
+		min-width: 0;
+	}
+	.pill-group {
+		width: 100%;
+	}
+	.pill {
+		flex: 1;
+		text-align: center;
+		padding-left: 4px;
+		padding-right: 4px;
+	}
 }
