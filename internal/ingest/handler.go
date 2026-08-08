@@ -18,10 +18,14 @@ type eventPayload struct {
 	DistinctID string          `json:"distinct_id"`
 	Properties json.RawMessage `json:"properties"`
 	Timestamp  *time.Time      `json:"timestamp"`
-	APIKey     string          `json:"api_key,omitempty"`
 }
 
-// Handler returns the http.HandlerFunc for /api/event.
+// Handler returns the http.HandlerFunc for /api/event. Two independent
+// checks gate every write: the X-API-Key/Authorization header must
+// match the configured ingest key, and the request's Origin must
+// resolve to a site registered via GNAT_SITES. Either failing results
+// in the event being dropped — see authorized and resolveSite for why
+// each fails the way it does.
 func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -38,14 +42,23 @@ func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc
 			return
 		}
 
-		var payload eventPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, "invalid json body", http.StatusBadRequest)
+		if !authorized(r, apiKey) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		if !authorized(r, payload.APIKey, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		// Origin must resolve to a registered site. No match is treated
+		// identically to "accepted but nothing to do" rather than an
+		// error, so probing for valid origins gets no signal either way.
+		siteID, ok := resolveSite(db, r)
+		if !ok {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		var payload eventPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "invalid json body", http.StatusBadRequest)
 			return
 		}
 
@@ -72,7 +85,7 @@ func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc
 		ua := parseUserAgent(r.UserAgent())
 
 		event := storage.Event{
-			SiteID:      1,
+			SiteID:      siteID,
 			EventName:   payload.EventName,
 			DistinctID:  payload.DistinctID,
 			Properties:  propsStr,
@@ -139,7 +152,12 @@ func isLoopbackOrPrivate(ip string) bool {
 	return parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsUnspecified()
 }
 
-func authorized(r *http.Request, bodyKey string, apiKey string) bool {
+// authorized checks the ingest API key via header only. The old
+// fallback to an api_key field in the JSON body has been removed:
+// putting a secret in a request body that's otherwise identical to
+// what a public tracker script sends invited exactly the kind of
+// leakage the header-based check avoids.
+func authorized(r *http.Request, apiKey string) bool {
 	if key := r.Header.Get("X-API-Key"); key != "" {
 		return key == apiKey
 	}
@@ -147,9 +165,6 @@ func authorized(r *http.Request, bodyKey string, apiKey string) bool {
 	const prefix = "Bearer "
 	if len(auth) > len(prefix) && auth[:len(prefix)] == prefix {
 		return auth[len(prefix):] == apiKey
-	}
-	if bodyKey != "" {
-		return bodyKey == apiKey
 	}
 	return false
 }

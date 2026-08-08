@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/var-raphael/gnat/internal/dialect"
 )
 
 // pageviewPoint is one bucket in the pageviews-over-time series.
@@ -16,17 +18,13 @@ type pageviewPoint struct {
 
 // PageviewsHandler returns GET /api/stats/pageviews?from=...&to=...
 // Both params are optional ISO 8601 dates; defaults to the last 7 days.
-// Locked down by API key regardless of CORS, since this endpoint returns
-// real data, not just accepts it.
-func PageviewsHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
+// Auth is handled by the caller: main.go wraps this in
+// auth.DashboardAuth.RequireSession, so by the time this handler runs
+// the request has already been verified.
+func PageviewsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		if !authorized(r, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -38,12 +36,12 @@ func PageviewsHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
 
 		var results []pageviewPoint
 
-		// Group by calendar day. strftime is SQLite syntax; this will need
-		// a dialect switch (to date_trunc for postgres, DATE() for mysql)
-		// once those backends are exercised here, GORM doesn't abstract
-		// date functions for us.
+		// Grouped by calendar day via dialect.DateTrunc, the one seam
+		// isolated per internal/dialect's package doc — everything else
+		// in this query is portable GORM as-is.
+		dateExpr := dialect.DateTrunc(db.Dialector.Name(), "timestamp")
 		err = db.Table("events").
-			Select("strftime('%Y-%m-%d', timestamp) as date, count(*) as count").
+			Select(dateExpr + " as date, count(*) as count").
 			Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
 			Group("date").
 			Order("date").
@@ -54,8 +52,19 @@ func PageviewsHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
 			return
 		}
 
+		byDate := make(map[string]int64, len(results))
+		for _, r := range results {
+			byDate[r.Date] = r.Count
+		}
+
+		filled := make([]pageviewPoint, 0)
+		for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+			key := d.Format("2006-01-02")
+			filled = append(filled, pageviewPoint{Date: key, Count: byDate[key]})
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(results)
+		json.NewEncoder(w).Encode(filled)
 	}
 }
 
@@ -79,7 +88,7 @@ func parseRange(r *http.Request) (time.Time, time.Time, error) {
 		if err != nil {
 			return from, to, errBadDate("to")
 		}
-		to = parsed
+		to = parsed.Add(24*time.Hour - time.Nanosecond)
 	}
 
 	return from, to, nil
@@ -97,17 +106,31 @@ func (e *badDateError) Error() string {
 	return "invalid " + e.field + " date, expected format YYYY-MM-DD"
 }
 
-// authorized mirrors the ingest package's check. Query endpoints use the
-// same key scheme for now; splitting into a separate read-only admin key
-// is a later hardening step.
-func authorized(r *http.Request, apiKey string) bool {
-	if key := r.Header.Get("X-API-Key"); key != "" {
-		return key == apiKey
-	}
-	auth := r.Header.Get("Authorization")
-	const prefix = "Bearer "
-	if len(auth) > len(prefix) && auth[:len(prefix)] == prefix {
-		return auth[len(prefix):] == apiKey
-	}
-	return false
+// countRow is one raw group-by-count result before percentages are
+// added.
+type countRow struct {
+	Value string
+	Count int64
 }
+
+// groupByCount runs a pageview count grouped by column, then adds a pct
+// of total to each row. Shared by countries/devices/browsers, which are
+// otherwise identical queries against different columns.
+func groupByCount(db *gorm.DB, column string, from, to time.Time) ([]countRow, error) {
+	var rows []countRow
+	err := db.Table("events").
+		Select(column + " as value, count(*) as count").
+		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
+		Group(column).
+		Order("count DESC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+func pctOfTotal(count int64, total int64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return roundTo2(float64(count) / float64(total) * 100)
+}
+

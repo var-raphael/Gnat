@@ -37,13 +37,12 @@
 					placeholder="Password"
 					autocomplete="current-password"
 					:class="loginError && 'is-error'"
+					:disabled="loginLoading"
 					x-ref="loginInput"
 				/>
 				<p class="login-error" x-show="loginError" x-text="loginError"></p>
-				<button type="submit" class="login-submit-btn">Unlock</button>
+				<button type="submit" class="login-submit-btn" :disabled="loginLoading" x-text="loginLoading ? 'Checking...' : 'Unlock'"></button>
 			</form>
-
-			<p class="login-mock-note">Mockup only. Password is <code>test</code>.</p>
 		</div>
 	</div>
 

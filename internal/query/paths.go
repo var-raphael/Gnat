@@ -37,15 +37,10 @@ type anchorOccurrence struct {
 // depth prior events, collapses consecutive duplicates, and groups
 // identical resulting paths. Returns the top 10 paths by count, with
 // everything else bucketed as "Other".
-func PathsHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
+func PathsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		if !authorized(r, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 

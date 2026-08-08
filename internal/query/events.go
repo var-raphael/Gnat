@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"gorm.io/gorm"
+
+	"github.com/var-raphael/gnat/internal/dialect"
 )
 
 // eventBreakdownPoint is one row when no ?name= filter is given: total
@@ -29,15 +31,10 @@ type eventSeriesPoint struct {
 //
 // If name is given: returns a daily time series for that one event, for
 // drilling into a specific event's trend.
-func EventsHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
+func EventsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		if !authorized(r, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -69,10 +66,11 @@ func EventsHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
 		}
 
 		var results []eventSeriesPoint
-		// strftime is SQLite-specific, same known gap as the pageviews
-		// endpoint. Needs a dialect switch before postgres/mysql are tested.
+		// See internal/dialect's package doc for why this is the one
+		// engine-specific seam here, same as the pageviews endpoint.
+		dateExpr := dialect.DateTrunc(db.Dialector.Name(), "timestamp")
 		err = db.Table("events").
-			Select("strftime('%Y-%m-%d', timestamp) as date, count(*) as count").
+			Select(dateExpr + " as date, count(*) as count").
 			Where("event_name = ? AND timestamp BETWEEN ? AND ?", name, from, to).
 			Group("date").
 			Order("date").

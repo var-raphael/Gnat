@@ -1,46 +1,18 @@
 // Gnat dashboard controller.
-//
-// MOCK MODE: every loader below reads from /mock-data.json instead of the
-// real /api/stats/* endpoints. This is deliberate — the frontend is being
-// designed first so the mock payload shape becomes the contract the real
-// backend implements. Each loader is written the way it will look once
-// live: swap the fetch path (see MOCK_DATA_URL) and, where noted, remove
-// the client-side aggregation once a dedicated backend endpoint exists.
-//
-// Also assumes the dashboard is served from the same origin as the API
-// (embedded in the same binary), so no API key is configured here. If the
-// dashboard is ever split from the API server, this needs its own auth
-// story — flagged, not silently assumed.
 
 const MOCK_DATA_URL = "/mock-data.json";
 const TIERS_URL = "/country-tiers.json";
-// Real version: POST /api/ai-review/regenerate (or similar) and return the
-// new { generated_at, model, summary } object. No such endpoint exists
-// yet, so regeneration in mock mode re-reads the same static payload and
-// just re-stamps generated_at, with an artificial delay so the loading
-// state is visibly testable rather than instant.
+// Real version: POST /api/ai-review/regenerate.
 const AI_REVIEW_REGENERATE_URL = "/mock-data.json";
 
-// Chart.js instances live here, OUTSIDE Alpine's reactive x-data object.
-// Alpine wraps everything in x-data with a reactive Proxy so it can detect
-// changes — but a live Chart.js instance is a large mutable object full of
-// canvas contexts, internal caches, and circular references. Letting Alpine
-// proxy that object invites subtle breakage (Alpine trying to "watch" deep
-// internals it has no business touching). Keeping instances in a plain,
-// non-reactive object sidesteps that entirely — this mirrors how the old
-// HTMX version worked, where each chart was just a local variable with no
-// framework wrapping it at all.
+// Kept outside Alpine's reactive x-data — proxying live Chart.js instances causes breakage.
 const chartRegistry = {
 	visitors: null,
 	donut: null,
 	retention: null,
 };
 
-// Replaces a canvas with a brand-new one carrying a fresh id, instead of
-// reusing the same canvas element across renders. This is the same trick
-// the old HTMX version used (uniqid() per chart) — a fresh canvas avoids
-// any possibility of stale sizing, stale context state, or a lingering
-// reference from a previous Chart.js instance that didn't clean up right.
+// Fresh canvas per render avoids stale Chart.js state on the old element.
 function freshCanvas(oldCanvas) {
 	const replacement = document.createElement("canvas");
 	replacement.id = oldCanvas.id;
@@ -64,6 +36,7 @@ function gnatDashboard() {
 		authenticated: false,
 		loginPassword: "",
 		loginError: "",
+		loginLoading: false,
 
 		// custom date range popover
 		customRangeOpen: false,
@@ -83,6 +56,7 @@ function gnatDashboard() {
 		topPages: [],
 		topReferrers: [],
 		countries: [],
+		countryInfo: {}, // code -> {name, tier}, loaded from /country-tiers.json
 		devices: [],
 		browsers: [],
 		customEvents: [],
@@ -122,46 +96,53 @@ function gnatDashboard() {
 		// mcp
 		mcpCopied: "", // "" | "config" | "query" — which code block was just copied
 
-		init() {
+		async init() {
 			const saved = localStorage.getItem("_gnat_theme");
 			this.theme = saved || "dark";
 
-			// Persisted session check: a real version needs an actual
-			// server-issued session token here, not just a flag in
-			// localStorage, since a flag alone can be set by anyone
-			// through dev tools without ever knowing the password.
-			this.authenticated = localStorage.getItem("_gnat_session") === "1";
+			const session = await this.fetchJSON("/api/dashboard/session");
+			this.authenticated = !!(session && session.authenticated);
 
 			if (this.authenticated) {
 				this.loadAll();
 			} else {
-				// Focus the password field once the login gate has
-				// actually rendered, rather than on the frame it's still
-				// x-cloak'd, so the cursor lands there immediately for
-				// anyone typing right away.
 				this.$nextTick(() => this.$refs.loginInput?.focus());
 			}
 		},
 
-		attemptLogin() {
-			// Mock check only, see the note on `authenticated` above for
-			// why this can never be a real security boundary as written.
-			if (this.loginPassword === "test") {
-				this.authenticated = true;
-				this.loginError = "";
+		async attemptLogin() {
+			this.loginLoading = true;
+			this.loginError = "";
+			try {
+				const res = await fetch("/api/dashboard/login", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ password: this.loginPassword }),
+				});
 				this.loginPassword = "";
-				localStorage.setItem("_gnat_session", "1");
-				this.loadAll();
-			} else {
-				this.loginError = "Incorrect password. Try again.";
-				this.loginPassword = "";
+				if (res.ok) {
+					this.authenticated = true;
+					this.loadAll();
+				} else {
+					this.loginError = "Incorrect password. Try again.";
+					this.$nextTick(() => this.$refs.loginInput?.focus());
+				}
+			} catch {
+				this.loginError = "Couldn't reach the server. Try again.";
 				this.$nextTick(() => this.$refs.loginInput?.focus());
+			} finally {
+				this.loginLoading = false;
 			}
 		},
 
-		logout() {
+		async logout() {
+			try {
+				await fetch("/api/dashboard/logout", { method: "POST" });
+			} catch {
+				// Best-effort: even if this fails, dropping local
+				// authenticated state below still hides the dashboard.
+			}
 			this.authenticated = false;
-			localStorage.removeItem("_gnat_session");
 			this.$nextTick(() => this.$refs.loginInput?.focus());
 		},
 
@@ -248,32 +229,48 @@ function gnatDashboard() {
 		},
 
 		async loadAll() {
-			// Real version: fire the per-widget calls in loadAll() below,
-			// each against its own /api/stats/... endpoint with
-			// this.dateRangeParams(). Mock version loads one payload once,
-			// since the mock file isn't range-aware yet.
 			const [data, tiers] = await Promise.all([
 				this.fetchJSON(MOCK_DATA_URL),
 				this.fetchJSON(TIERS_URL),
 			]);
-			if (!data) return;
 
-			this.tierMap = (tiers && tiers.tiers) || {};
-			this.rawData = data;
+			this.countryInfo = (tiers && tiers.countries) || {};
 
-			this.loadStats(data.stats);
-			this.loadVisitorsOverTime(data.visitors_over_time);
-			this.loadTrafficSources(data.traffic_sources);
-			this.loadTopPages(data.top_pages);
-			this.loadTopReferrers(data.top_referrers);
-			this.loadCountries(data.countries);
-			this.loadDevices(data.devices);
-			this.loadBrowsers(data.browsers);
-			this.loadCustomEvents(data.custom_events);
-			this.loadLiveVisitors(data.live_visitors);
-			this.loadAIReview(data.ai_review);
-			this.loadFunnels(data.funnels);
-			this.loadRetention(data.retention);
+			if (data) {
+				this.rawData = data;
+				this.loadStats(data.stats);
+				this.loadLiveVisitors(data.live_visitors);
+				this.loadAIReview(data.ai_review);
+				this.loadFunnels(data.funnels);
+			}
+
+			this.fetchJSON(`/api/stats/custom-events?${this.dateRangeParams()}`).then((rows) => {
+				this.loadCustomEvents(rows);
+			});
+			this.fetchJSON(`/api/stats/retention?${this.dateRangeParams()}`).then((rows) => {
+				this.loadRetention(rows);
+			});
+			this.fetchJSON(`/api/stats/countries?${this.dateRangeParams()}`).then((rows) => {
+				this.loadCountries(rows);
+			});
+			this.fetchJSON(`/api/stats/pageviews?${this.dateRangeParams()}`).then((rows) => {
+				this.loadVisitorsOverTime(rows ? { points: rows.map((r) => ({ label: r.date, count: r.count })) } : null);
+			});
+			this.fetchJSON(`/api/stats/devices?${this.dateRangeParams()}`).then((rows) => {
+				this.loadDevices(rows);
+			});
+			this.fetchJSON(`/api/stats/browsers?${this.dateRangeParams()}`).then((rows) => {
+				this.loadBrowsers(rows);
+			});
+			this.fetchJSON(`/api/stats/pages?${this.dateRangeParams()}`).then((rows) => {
+				this.loadTopPages(rows);
+			});
+			this.fetchJSON(`/api/stats/referrers?${this.dateRangeParams()}`).then((rows) => {
+				this.loadTopReferrers(rows);
+			});
+			this.fetchJSON(`/api/stats/traffic-sources?${this.dateRangeParams()}`).then((rows) => {
+				this.loadTrafficSources(rows);
+			});
 		},
 
 		loadStats(stats) {
@@ -495,19 +492,22 @@ function gnatDashboard() {
 
 		loadTopReferrers(referrers) {
 			if (!referrers) return;
-			// Only "referral" category rows belong here — Direct, Google,
-			// Social, and Email already have their own slice in the
-			// Traffic Sources donut above, so repeating them in this list
-			// would double-count the same visitors under two widgets.
-			// This list exists to answer "which *other sites* send us
-			// traffic," which is only meaningful for the referral bucket.
-			const referralOnly = referrers.filter((r) => r.category === "referral");
-			this.topReferrers = this.toBreakdownRows(referralOnly, "referrer", "count");
+			this.topReferrers = this.toBreakdownRows(referrers, "referrer", "count");
 		},
 
-		loadCountries(countries) {
-			if (!countries) return;
-			this.countries = countries; // already has count/pct/tier from mock
+		loadCountries(rows) {
+			if (!rows) {
+				this.countries = [];
+				return;
+			}
+			this.countries = rows.map((row) => {
+				const info = this.countryInfo[row.code];
+				return {
+					...row,
+					name: (info && info.name) || row.code,
+					tier: info ? info.tier : "?",
+				};
+			});
 		},
 
 		loadDevices(devices) {
@@ -1108,18 +1108,7 @@ and top referrers for the last 7 days."`,
 	};
 }
 
-// ---------------------------------------------------------------------
-// Tap-to-open tooltips on touch devices
-//
-// The [data-tooltip] system (see dashboard.css) is hover-driven, which
-// doesn't exist on touch. Rather than wire an Alpine handler onto all 23+
-// tooltip-bearing elements individually, this is one small delegated
-// listener: tapping any [data-tooltip] element toggles a `.tooltip-open`
-// class that the CSS keys off under `@media (hover: none)`; tapping
-// anywhere else (or a different tooltip target) closes whatever was open.
-// Lives outside the Alpine component on purpose — it's global page
-// behavior, not per-instance state, and needs no reactivity.
-// ---------------------------------------------------------------------
+// Tap-to-open tooltips on touch devices, delegated listener outside Alpine (global, not per-instance).
 (function setupTapTooltips() {
 	let openEl = null;
 

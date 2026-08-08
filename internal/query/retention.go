@@ -12,7 +12,7 @@ import (
 // most retention tools report. Day 0 is always 100% by definition
 // (the day someone first appears, they were obviously active), included
 // mainly for completeness/consistency in the response shape.
-var retentionCheckpoints = []int{0, 1, 7, 30}
+var retentionCheckpoints = []int{0, 1, 3, 7, 14, 21, 30}
 
 type cohortResult struct {
 	CohortDate string             `json:"cohort_date"` // YYYY-MM-DD
@@ -26,23 +26,25 @@ type firstSeenRow struct {
 	FirstSeen  string
 }
 
+type retentionPoint struct {
+	Label string  `json:"label"`
+	Pct   float64 `json:"pct"`
+}
+
+type retentionResponse struct {
+	CohortSize int64            `json:"cohort_size"`
+	Unit       string           `json:"unit"`
+	Points     []retentionPoint `json:"points"`
+}
+
 // RetentionHandler returns GET /api/stats/retention?from=...&to=...
-//
-// Cohorts are grouped by each visitor's first-ever event, calendar day.
-// For each cohort, reports what percentage of that cohort had any
-// activity on each of the standard checkpoint days (0, 1, 7, 30 days
-// after their first-seen day). Cohort determination is based on
-// distinct_id (localStorage identity), not IP, so it is unaffected by
-// IP rotation (e.g. mobile data switching networks).
-func RetentionHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
+// Aggregates every cohort in range into one curve, weighted by cohort
+// size, since the dashboard shows a single retention line rather than
+// per-cohort breakdowns.
+func RetentionHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		if !authorized(r, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -52,15 +54,41 @@ func RetentionHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
 			return
 		}
 
-		results, err := computeRetention(db, from, to)
+		cohorts, err := computeRetention(db, from, to)
 		if err != nil {
 			http.Error(w, "query failed", http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(results)
+		json.NewEncoder(w).Encode(aggregateCohorts(cohorts))
 	}
+}
+
+// aggregateCohorts combines multiple cohorts into a single weighted
+// retention curve: each checkpoint's pct is the total active count
+// across all cohorts at that checkpoint, divided by total cohort size.
+func aggregateCohorts(cohorts []cohortResult) retentionResponse {
+	var totalSize int64
+	for _, c := range cohorts {
+		totalSize += c.Size
+	}
+
+	points := make([]retentionPoint, 0, len(retentionCheckpoints))
+	for _, checkpoint := range retentionCheckpoints {
+		key := checkpointKey(checkpoint)
+		var activeTotal float64
+		for _, c := range cohorts {
+			activeTotal += c.Retention[key] / 100 * float64(c.Size)
+		}
+		pct := 0.0
+		if totalSize > 0 {
+			pct = roundTo2(activeTotal / float64(totalSize) * 100)
+		}
+		points = append(points, retentionPoint{Label: "Day " + itoa(checkpoint), Pct: pct})
+	}
+
+	return retentionResponse{CohortSize: totalSize, Unit: "day", Points: points}
 }
 
 func computeRetention(db *gorm.DB, from, to time.Time) ([]cohortResult, error) {

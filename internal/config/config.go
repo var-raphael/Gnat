@@ -3,69 +3,98 @@ package config
 import (
 	"fmt"
 	"os"
-
-	"gopkg.in/yaml.v3"
+	"strconv"
+	"strings"
 )
 
 type ServerConfig struct {
-	BindPort  int    `yaml:"bind_port"`
-	PublicURL string `yaml:"public_url"`
+	BindPort  int
+	PublicURL string
 }
 
 type DatabaseConfig struct {
-	Driver   string `yaml:"driver"` // sqlite, postgres, mysql
-	Path     string `yaml:"path"`   // used for sqlite
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	DBName   string `yaml:"dbname"`
-	SSLMode  string `yaml:"sslmode"` // postgres only, defaults to "disable"
+	Driver   string // sqlite, postgres, mysql
+	Path     string // used for sqlite
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string
+	SSLMode  string // postgres only, defaults to "disable"
 }
 
 type RetentionConfig struct {
-	RawEventsDays int `yaml:"raw_events_days"`
-}
-
-type UpdatesConfig struct {
-	CheckForUpdates bool `yaml:"check_for_updates"`
+	RawEventsDays int
 }
 
 type AIConfig struct {
-	Provider string `yaml:"provider"` // anthropic, openai, mistral, ollama
-	Model    string `yaml:"model"`
+	Provider string // anthropic, openai, mistral, ollama
+	Model    string
 }
 
+// Config holds every setting Gnat needs, sourced entirely from
+// environment variables. There is no config file: secrets and settings
+// living in one place, rather than split across a yaml file and env
+// overrides, is a deliberate security/simplicity choice.
 type Config struct {
-	Server    ServerConfig    `yaml:"server"`
-	Database  DatabaseConfig  `yaml:"database"`
-	APIKey    string          `yaml:"api_key"`
-	Retention RetentionConfig `yaml:"retention"`
-	Updates   UpdatesConfig   `yaml:"updates"`
-	AI        AIConfig        `yaml:"ai"`
+	Server    ServerConfig
+	Database  DatabaseConfig
+	Retention RetentionConfig
+	AI        AIConfig
 
-	// aiAPIKey and ipinfoToken are deliberately not yaml-tagged. They are
-	// never read from or written to the config file, only ever set from
-	// their respective environment variables.
-	aiAPIKey    string
-	ipinfoToken string
+	// APIKey authorizes writes to /api/event only. It is never used to
+	// protect the dashboard or stats endpoints — see DashboardPassword.
+	APIKey string
+
+	// DashboardPassword gates the dashboard page and every /api/stats
+	// and /api/export endpoint. Deliberately separate from APIKey so
+	// rotating one never affects the other.
+	DashboardPassword string
+
+	// Sites is the operator-controlled allowlist of domains permitted
+	// to send events, e.g. "example.com,app.example.com". Incoming
+	// events are matched against this list via the Origin header; any
+	// origin not on this list is silently dropped at ingest.
+	Sites []string
+
+	// aiAPIKey is sourced only from its own env var, deliberately kept
+	// unexported so nothing accidentally logs or serializes it alongside
+	// the rest of Config.
+	aiAPIKey string
 }
 
-// Load reads and parses the YAML config file at path, applies env var
-// overrides for anything sensitive, then validates the result.
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
+// Load builds Config entirely from environment variables and validates
+// the result. It does not read any file itself; call godotenv.Load()
+// earlier in main() if you want local .env support, this function only
+// ever looks at the process environment.
+func Load() (*Config, error) {
+	cfg := &Config{
+		Server: ServerConfig{
+			BindPort:  envInt("GNAT_BIND_PORT", 8080),
+			PublicURL: envString("GNAT_PUBLIC_URL", "http://localhost:8080"),
+		},
+		Database: DatabaseConfig{
+			Driver:   envString("GNAT_DB_DRIVER", "sqlite"),
+			Path:     envString("GNAT_DB_PATH", "./analytics.db"),
+			Host:     envString("GNAT_DB_HOST", ""),
+			Port:     envInt("GNAT_DB_PORT", 0),
+			User:     envString("GNAT_DB_USER", ""),
+			Password: envString("GNAT_DB_PASSWORD", ""),
+			DBName:   envString("GNAT_DB_NAME", ""),
+			SSLMode:  envString("GNAT_DB_SSLMODE", "disable"),
+		},
+		Retention: RetentionConfig{
+			RawEventsDays: envInt("GNAT_RETENTION_RAW_EVENTS_DAYS", 0),
+		},
+		AI: AIConfig{
+			Provider: envString("GNAT_AI_PROVIDER", ""),
+			Model:    envString("GNAT_AI_MODEL", ""),
+		},
+		APIKey:            os.Getenv("GNAT_API_KEY"),
+		DashboardPassword: os.Getenv("GNAT_DASHBOARD_PASSWORD"),
+		Sites:             parseSites(os.Getenv("GNAT_SITES")),
+		aiAPIKey:          os.Getenv("GNAT_AI_API_KEY"),
 	}
-
-	cfg := defaultConfig()
-
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("parsing config file: %w", err)
-	}
-
-	cfg.applyEnvOverrides()
 
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -74,78 +103,76 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-func defaultConfig() *Config {
-	return &Config{
-		Server: ServerConfig{
-			BindPort:  8080,
-			PublicURL: "http://localhost:8080",
-		},
-		Database: DatabaseConfig{
-			Driver:  "sqlite",
-			Path:    "./analytics.db",
-			SSLMode: "disable",
-		},
-		Retention: RetentionConfig{
-			RawEventsDays: 0,
-		},
-		Updates: UpdatesConfig{
-			CheckForUpdates: true,
-		},
+func envString(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
+	return def
 }
 
-// applyEnvOverrides lets deployment secrets come from the environment
-// instead of the yaml file. Env vars win if set, since these are the
-// values people should not be committing to a repo.
-func (c *Config) applyEnvOverrides() {
-	if v := os.Getenv("GNAT_API_KEY"); v != "" {
-		c.APIKey = v
+func envInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
 	}
-	if v := os.Getenv("GNAT_DB_HOST"); v != "" {
-		c.Database.Host = v
+	parsed, err := strconv.Atoi(v)
+	if err != nil {
+		return def
 	}
-	if v := os.Getenv("GNAT_DB_USER"); v != "" {
-		c.Database.User = v
-	}
-	if v := os.Getenv("GNAT_DB_PASSWORD"); v != "" {
-		c.Database.Password = v
-	}
-	if v := os.Getenv("GNAT_DB_NAME"); v != "" {
-		c.Database.DBName = v
-	}
-	if v := os.Getenv("GNAT_AI_API_KEY"); v != "" {
-		c.aiAPIKey = v
-	}
-	if v := os.Getenv("GNAT_IPINFO_TOKEN"); v != "" {
-		c.ipinfoToken = v
-	}
+	return parsed
 }
 
+// parseSites splits a comma-separated domain list into a clean slice,
+// trimming whitespace and dropping empty entries (e.g. from trailing
+// commas or accidental double commas).
+func parseSites(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	sites := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			sites = append(sites, p)
+		}
+	}
+	return sites
+}
+
+// validate fails fast on any missing setting that would otherwise leave
+// Gnat running in a silently broken or insecure state: no ingest key
+// means anyone could write events, no dashboard password means anyone
+// could read them, and no sites means every event would be dropped with
+// no way to tell why, same as never registering a property with any
+// other analytics tool.
 func (c *Config) validate() error {
 	if c.APIKey == "" {
-		return fmt.Errorf("api_key must be set (via config file or GNAT_API_KEY)")
+		return fmt.Errorf("GNAT_API_KEY must be set")
 	}
+	if c.DashboardPassword == "" {
+		return fmt.Errorf("GNAT_DASHBOARD_PASSWORD must be set")
+	}
+	if len(c.Sites) == 0 {
+		return fmt.Errorf("GNAT_SITES must be set to at least one domain (comma-separated for more), e.g. GNAT_SITES=example.com")
+	}
+
 	switch c.Database.Driver {
 	case "sqlite":
 		// path has a default, nothing further required
 	case "postgres", "mysql":
 		if c.Database.Host == "" || c.Database.User == "" || c.Database.DBName == "" {
-			return fmt.Errorf("%s requires host, user, and dbname (via config or env)", c.Database.Driver)
+			return fmt.Errorf("%s requires GNAT_DB_HOST, GNAT_DB_USER, and GNAT_DB_NAME", c.Database.Driver)
 		}
 	default:
-		return fmt.Errorf("unsupported database driver: %s", c.Database.Driver)
+		return fmt.Errorf("unsupported GNAT_DB_DRIVER: %s", c.Database.Driver)
 	}
+
 	return nil
 }
 
-// AIAPIKey returns the AI provider API key. Sourced only from the
-// GNAT_AI_API_KEY environment variable, never from the config file.
+// AIAPIKey returns the AI provider API key, sourced only from
+// GNAT_AI_API_KEY.
 func (c *Config) AIAPIKey() string {
 	return c.aiAPIKey
-}
-
-// IPInfoToken returns the IPinfo Lite API token used for geo enrichment.
-// Sourced only from GNAT_IPINFO_TOKEN. If empty, geo lookups are disabled.
-func (c *Config) IPInfoToken() string {
-	return c.ipinfoToken
 }

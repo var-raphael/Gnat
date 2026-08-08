@@ -62,15 +62,10 @@ func parseSQLiteTime(s string) (time.Time, error) {
 // contention from the previous step, so memory tracks shrinking visitor
 // counts rather than total matching events. SQLite-specific; Postgres/
 // MySQL support is a known deferred gap.
-func FunnelsHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
+func FunnelsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		if !authorized(r, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 

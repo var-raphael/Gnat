@@ -28,15 +28,10 @@ type exportEvent struct {
 
 // ExportHandler returns GET /api/export?format=csv|json|jsonl&from=...&to=...
 // Defaults to json if format is omitted or unrecognized.
-func ExportHandler(db *gorm.DB, apiKey string) http.HandlerFunc {
+func ExportHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		if !authorized(r, apiKey) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
