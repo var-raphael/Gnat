@@ -47,7 +47,7 @@ func CustomEventsHandler(db *gorm.DB) http.HandlerFunc {
 		}
 		err = db.Table("events").
 			Select("event_name, properties").
-			Where("event_name != ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
+			Where("event_name NOT IN (?, ?) AND timestamp BETWEEN ? AND ?", "pageview", "heartbeat", from, to).
 			Scan(&rows).Error
 		if err != nil {
 			http.Error(w, "query failed", http.StatusInternalServerError)

@@ -55,7 +55,22 @@ type PathSummary struct {
 	ComputedAt  time.Time
 }
 
+// Funnel is an operator-defined conversion funnel: an ordered sequence
+// of event names to track visitors through. Steps are stored as JSON
+// text (list of {event_name, label}) rather than a separate table,
+// since they're always read/written as a whole ordered unit, never
+// queried individually.
+type Funnel struct {
+	ID          uint   `gorm:"primaryKey"`
+	SiteID      uint   `gorm:"index;not null"`
+	Name        string `gorm:"not null"`
+	Steps       string `gorm:"type:text;not null"`
+	WindowHours int    `gorm:"not null;default:168"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 // AutoMigrate runs GORM's schema migration for all models.
 func AutoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(&Site{}, &Event{}, &PathSummary{})
+	return db.AutoMigrate(&Site{}, &Event{}, &PathSummary{}, &Funnel{})
 }

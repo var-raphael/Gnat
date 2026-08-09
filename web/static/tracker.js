@@ -123,6 +123,20 @@
 
 	// --- pageview lifecycle ---
 
+	var HEARTBEAT_INTERVAL = 30000; // 30s, keeps live-visitor tracking fresh
+	var heartbeatTimer = null;
+
+	function sendHeartbeat() {
+		if (document.visibilityState === "visible" && !pageLeft) {
+			send("heartbeat", { path: currentPath });
+		}
+	}
+
+	function startHeartbeat() {
+		clearInterval(heartbeatTimer);
+		heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+	}
+
 	function trackPageview() {
 		send("pageview", {
 			path: location.pathname,
@@ -164,6 +178,7 @@
 	// --- wire up ---
 
 	trackPageview();
+	startHeartbeat();
 
 	var activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click"];
 	activityEvents.forEach(function (evt) {

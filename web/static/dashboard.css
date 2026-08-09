@@ -342,6 +342,22 @@ body {
 	flex-wrap: wrap;
 }
 
+.pill-group-scroll {
+	display: flex;
+	gap: 6px;
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	padding-bottom: 2px;
+}
+.pill-group-scroll::-webkit-scrollbar {
+	display: none;
+}
+.pill-group-scroll .pill {
+	flex-shrink: 0;
+}
+
 .pill {
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
@@ -1217,164 +1233,6 @@ body {
 }
 
 /* ---------------------------------------------------------------------
-   AI review card
---------------------------------------------------------------------- */
-
-.ai-review-card {
-	background: linear-gradient(155deg, var(--accent-faint), var(--bg-raised-2) 45%);
-	border: 1px solid var(--border);
-	border-radius: 12px;
-	box-shadow: var(--panel-shadow);
-	padding: 20px 22px;
-	position: relative;
-	/* No overflow:hidden here — that was clipping the Regenerate button's
-	   tooltip too, since the button lives inside this card and its
-	   tooltip is an absolutely-positioned child of it. The decorative
-	   glow below now clips itself via its own wrapper instead of relying
-	   on the whole card to do it. */
-}
-
-/* Dedicated layer for the decorative glow, sized exactly to the card and
-   clipped to its rounded corners on its own — this is what overflow:
-   hidden on .ai-review-card used to do, but scoped so it only affects
-   the glow and not any real content (like the regenerate button's
-   tooltip) that needs to escape the card's bounds. */
-.ai-review-glow {
-	position: absolute;
-	inset: 0;
-	border-radius: inherit;
-	overflow: hidden;
-	pointer-events: none;
-	z-index: 0;
-}
-.ai-review-glow::before {
-	content: "";
-	position: absolute;
-	top: -40%;
-	right: -10%;
-	width: 220px;
-	height: 220px;
-	background: radial-gradient(circle, var(--accent-glow), transparent 70%);
-	opacity: 0.25;
-}
-
-/* The card's own tooltip lives on this wrapper rather than
-   .ai-review-card itself, so it isn't affected by the card's internal
-   layering, and gets the same hover z-index lift as every other card so
-   it isn't painted under whatever section follows it. */
-.ai-review-wrap {
-	position: relative;
-	z-index: 1;
-	border-radius: 12px;
-	transition: z-index 0.2s ease;
-}
-.ai-review-wrap:hover,
-.ai-review-wrap:focus-within {
-	z-index: 60;
-}
-
-.ai-review-head {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin-bottom: 10px;
-	position: relative;
-	z-index: 1;
-}
-
-.ai-review-icon {
-	width: 16px;
-	height: 16px;
-	color: var(--accent);
-	flex-shrink: 0;
-}
-
-.ai-review-title {
-	font-family: var(--font-display);
-	font-size: 13px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	color: var(--fg-muted);
-	flex: 1;
-}
-
-.ai-review-regen {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	background: transparent;
-	border: 1px solid var(--border);
-	color: var(--fg-muted);
-	font-family: var(--font-body);
-	font-size: 11.5px;
-	font-weight: 500;
-	padding: 5px 10px;
-	border-radius: 20px;
-	cursor: pointer;
-	flex-shrink: 0;
-	transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
-}
-.ai-review-regen:hover:not(:disabled) {
-	color: var(--accent);
-	border-color: var(--accent-dim);
-	background: var(--accent-faint);
-}
-.ai-review-regen:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: 2px;
-}
-.ai-review-regen:disabled {
-	cursor: default;
-	opacity: 0.7;
-}
-.ai-review-regen svg {
-	flex-shrink: 0;
-	transition: transform 0.5s ease;
-}
-.ai-review-regen.is-loading svg {
-	animation: ai-regen-spin 0.9s linear infinite;
-}
-@keyframes ai-regen-spin {
-	to { transform: rotate(360deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-	.ai-review-regen.is-loading svg {
-		animation: none;
-	}
-}
-
-/* On very narrow cards the label can get tight next to the pill button
-   — drop to icon-only under 380px so it never wraps awkwardly. */
-@media (max-width: 380px) {
-	.ai-review-regen span {
-		display: none;
-	}
-	.ai-review-regen {
-		padding: 6px 8px;
-	}
-}
-
-.ai-review-body {
-	font-size: 14px;
-	line-height: 1.6;
-	color: var(--fg);
-	transition: opacity 0.2s ease;
-	position: relative;
-	z-index: 1;
-}
-.ai-review-body.is-loading {
-	opacity: 0.5;
-}
-
-.ai-review-meta {
-	margin-top: 12px;
-	font-size: 11px;
-	color: var(--fg-muted);
-	font-family: var(--font-mono);
-}
-
-/* ---------------------------------------------------------------------
    Modal (shared by every "View All")
 --------------------------------------------------------------------- */
 
@@ -2028,10 +1886,103 @@ body {
 	.pill-group {
 		width: 100%;
 	}
-	.pill {
+	.pill-group .pill {
 		flex: 1;
 		text-align: center;
 		padding-left: 4px;
 		padding-right: 4px;
 	}
+}
+
+.funnel-manager-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--border);
+	gap: 12px;
+}
+.funnel-manager-name {
+	font-weight: 600;
+	display: block;
+}
+.funnel-manager-steps {
+	font-size: 12px;
+	color: var(--fg-muted);
+	display: block;
+	margin-top: 2px;
+}
+.funnel-manager-actions {
+	display: flex;
+	gap: 8px;
+	flex-shrink: 0;
+}
+
+.funnel-form-label {
+	display: block;
+	font-size: 12px;
+	color: var(--fg-muted);
+	margin: 16px 0 6px;
+}
+.funnel-form-input {
+	width: 100%;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	color: var(--fg);
+	font-size: 14px;
+	padding: 9px 12px;
+	border-radius: 8px;
+}
+.funnel-form-input:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+.funnel-step-form-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-bottom: 8px;
+}
+.funnel-step-form-row .funnel-form-input {
+	flex: 1;
+}
+.funnel-form-error {
+	color: var(--danger);
+	font-size: 13px;
+	margin-top: 12px;
+}
+.funnel-form-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 20px;
+}
+
+.funnel-action-btn {
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	color: var(--fg);
+	font-family: var(--font-body);
+	font-size: 13px;
+	font-weight: 600;
+	padding: 7px 16px;
+	border-radius: 8px;
+	cursor: pointer;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+.funnel-action-btn:hover {
+	border-color: var(--accent-dim);
+	background: color-mix(in srgb, var(--bg-raised) 80%, var(--accent) 8%);
+}
+.funnel-action-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.funnel-action-btn-danger {
+	color: var(--danger);
+	border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+.funnel-action-btn-danger:hover {
+	border-color: var(--danger);
+	background: color-mix(in srgb, var(--bg-raised) 80%, var(--danger) 10%);
 }

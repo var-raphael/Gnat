@@ -1,9 +1,6 @@
 // Gnat dashboard controller.
 
-const MOCK_DATA_URL = "/mock-data.json";
 const TIERS_URL = "/country-tiers.json";
-// Real version: POST /api/ai-review/regenerate.
-const AI_REVIEW_REGENERATE_URL = "/mock-data.json";
 
 // Kept outside Alpine's reactive x-data — proxying live Chart.js instances causes breakage.
 const chartRegistry = {
@@ -69,12 +66,15 @@ function gnatDashboard() {
 		liveModalOpen: false,
 		liveModalView: "page", // "page" | "flat" — shown inside the See All modal
 
-		aiReview: null,
-		aiReviewLoading: false,
-
 		// funnels
 		funnels: [],
+		funnelDefs: [],
 		selectedFunnelId: null,
+		funnelManagerOpen: false,
+		funnelEditing: null,
+		funnelFormError: "",
+		funnelSaving: false,
+		availableEventNames: [],
 
 		// retention
 		retention: { points: [] },
@@ -91,10 +91,13 @@ function gnatDashboard() {
 
 		// export
 		exportFormat: "csv", // "csv" | "json" | "jsonl"
-		rawData: null, // full last-loaded payload, kept as-is for export
 
 		// mcp
 		mcpCopied: "", // "" | "config" | "query" — which code block was just copied
+
+		// live-refresh polling (stats + live visitors only — see startPolling)
+		_pollTimer: null,
+		_pollIntervalMs: 30000,
 
 		async init() {
 			const saved = localStorage.getItem("_gnat_theme");
@@ -105,9 +108,26 @@ function gnatDashboard() {
 
 			if (this.authenticated) {
 				this.loadAll();
+				this.startPolling();
 			} else {
 				this.$nextTick(() => this.$refs.loginInput?.focus());
 			}
+
+			// Pausing while the tab is hidden avoids burning requests (and
+			// server load) on a background tab nobody's looking at — the
+			// data simply catches up the moment the tab is foregrounded
+			// again instead of drifting further out of date while hidden.
+			document.addEventListener("visibilitychange", () => {
+				if (document.hidden) {
+					this.stopPolling();
+				} else if (this.authenticated) {
+					// Refresh immediately on return so stale background
+					// time doesn't wait out a full new 30s cycle, then
+					// resume the regular interval from now.
+					this.pollNow();
+					this.startPolling();
+				}
+			});
 		},
 
 		async attemptLogin() {
@@ -123,6 +143,7 @@ function gnatDashboard() {
 				if (res.ok) {
 					this.authenticated = true;
 					this.loadAll();
+					this.startPolling();
 				} else {
 					this.loginError = "Incorrect password. Try again.";
 					this.$nextTick(() => this.$refs.loginInput?.focus());
@@ -136,6 +157,7 @@ function gnatDashboard() {
 		},
 
 		async logout() {
+			this.stopPolling();
 			try {
 				await fetch("/api/dashboard/logout", { method: "POST" });
 			} catch {
@@ -229,21 +251,18 @@ function gnatDashboard() {
 		},
 
 		async loadAll() {
-			const [data, tiers] = await Promise.all([
-				this.fetchJSON(MOCK_DATA_URL),
-				this.fetchJSON(TIERS_URL),
-			]);
-
+			const tiers = await this.fetchJSON(TIERS_URL);
 			this.countryInfo = (tiers && tiers.countries) || {};
 
-			if (data) {
-				this.rawData = data;
-				this.loadStats(data.stats);
-				this.loadLiveVisitors(data.live_visitors);
-				this.loadAIReview(data.ai_review);
-				this.loadFunnels(data.funnels);
-			}
-
+			this.fetchJSON(`/api/stats/funnels?${this.dateRangeParams()}`).then((rows) => {
+				this.loadFunnels(rows);
+			});
+			this.fetchJSON(`/api/stats/live`).then((rows) => {
+				this.loadLiveVisitors(rows);
+			});
+			this.fetchJSON(`/api/stats/summary`).then((stats) => {
+				this.loadStats(stats);
+			});
 			this.fetchJSON(`/api/stats/custom-events?${this.dateRangeParams()}`).then((rows) => {
 				this.loadCustomEvents(rows);
 			});
@@ -273,14 +292,53 @@ function gnatDashboard() {
 			});
 		},
 
+		// ---- live-refresh polling ----------------------------------------
+		//
+		// Only `stats` (today-vs-yesterday headline numbers) and `live`
+		// (visitors active right now) refresh on a timer. Every other
+		// card is scoped to the selected date range (7/30/90/custom) —
+		// funnels, countries, retention, etc. — and a range spanning days
+		// or months simply doesn't move enough in 30s to justify an extra
+		// request every cycle. Polling those too would mean ~11 requests
+		// every 30s regardless of what's actually changed, for sections
+		// whose numbers are effectively static within a single visit.
+		// stats/live are deliberately fetched independently of loadAll's
+		// other calls (not by re-running loadAll) so a poll tick never
+		// re-fetches or re-renders range-scoped sections, and never
+		// re-runs the tiers fetch or chart redraws tied to those.
+
+		startPolling() {
+			// guard against double-starting (e.g. a visibility toggle
+			// firing while a timer is already running)
+			if (this._pollTimer) return;
+			this._pollTimer = setInterval(() => this.pollNow(), this._pollIntervalMs);
+		},
+
+		stopPolling() {
+			if (this._pollTimer) {
+				clearInterval(this._pollTimer);
+				this._pollTimer = null;
+			}
+		},
+
+		pollNow() {
+			this.fetchJSON(`/api/stats/summary`).then((stats) => {
+				this.loadStats(stats);
+			});
+			this.fetchJSON(`/api/stats/live`).then((rows) => {
+				this.loadLiveVisitors(rows, { isPoll: true });
+			});
+		},
+
 		loadStats(stats) {
 			if (!stats) return;
 			this.stats = stats;
 		},
 
 		formatDuration(seconds) {
+			if (seconds === undefined || seconds === null || isNaN(seconds)) return "0m 0s";
 			const m = Math.floor(seconds / 60);
-			const s = seconds % 60;
+			const s = Math.floor(seconds % 60);
 			return `${m}m ${s}s`;
 		},
 
@@ -515,7 +573,7 @@ function gnatDashboard() {
 			this.devices = devices;
 		},
 
-		// Browser bucketing itself happens server-side (or in mock-data.json).
+		// Browser bucketing itself happens server-side.
 		// This just passes through whatever labels arrive — if "Other" is
 		// still swallowing a lot of traffic, expand the browser-detection
 		// list at the source (wherever the user-agent gets parsed into a
@@ -531,14 +589,22 @@ function gnatDashboard() {
 			this.customEvents = this.toBreakdownRows(events, "event_name", "count");
 		},
 
-		loadLiveVisitors(visitors) {
+		// On a full loadAll() (initial load, login, range change), the
+		// filter/expanded-group UI state is reset since the visitor list
+		// itself is starting fresh. On a background poll tick (isPoll:
+		// true), that same state is deliberately left alone — otherwise
+		// anyone who filtered by country or expanded a page group would
+		// get silently reset back to the default view every 30 seconds.
+		loadLiveVisitors(visitors, { isPoll = false } = {}) {
 			if (!visitors) return;
-			this.liveVisitors = visitors;
-			// A fresh load can drop pages/values the current filter or
-			// expanded-group state referred to; resetting keeps the UI
-			// from silently showing a stale, now-meaningless selection.
-			this.liveFilterValue = "";
-			this.expandedLiveGroups = [];
+			this.liveVisitors = visitors.map((v) => {
+				const info = this.countryInfo[v.country_code];
+				return { ...v, country_name: (info && info.name) || v.country_code };
+			});
+			if (!isPoll) {
+				this.liveFilterValue = "";
+				this.expandedLiveGroups = [];
+			}
 		},
 
 		// Visitors matching the current filter (field + value). With no
@@ -591,32 +657,6 @@ function gnatDashboard() {
 			this.liveModalOpen = false;
 		},
 
-		loadAIReview(review) {
-			if (!review) return;
-			this.aiReview = review;
-		},
-
-		// Re-requests the AI summary against the current data. Mock mode
-		// re-reads the same static payload (there's no variation to show)
-		// but still exercises the real request/loading/error path so the
-		// UI is already correct once a live regenerate endpoint exists —
-		// swap AI_REVIEW_REGENERATE_URL for a POST to that endpoint and
-		// this method doesn't need to change shape.
-		async regenerateAIReview() {
-			if (this.aiReviewLoading) return;
-			this.aiReviewLoading = true;
-			try {
-				const data = await this.fetchJSON(AI_REVIEW_REGENERATE_URL);
-				if (data && data.ai_review) {
-					// Mock has no real variation, so re-stamp generated_at
-					// to now to at least reflect that a refresh happened.
-					this.aiReview = { ...data.ai_review, generated_at: new Date().toISOString() };
-				}
-			} finally {
-				this.aiReviewLoading = false;
-			}
-		},
-
 		// ---- tabs --------------------------------------------------------
 
 		setTab(tab) {
@@ -665,6 +705,118 @@ function gnatDashboard() {
 
 		get selectedFunnel() {
 			return this.funnels.find((f) => f.id === this.selectedFunnelId) || null;
+		},
+
+		async openFunnelManager() {
+			this.funnelManagerOpen = true;
+			this.funnelEditing = null;
+			this.funnelFormError = "";
+			const [names, defs] = await Promise.all([
+				this.fetchJSON("/api/event-names"),
+				this.fetchJSON("/api/funnels"),
+			]);
+			this.availableEventNames = names || [];
+			this.funnelDefs = defs || [];
+		},
+
+		closeFunnelManager() {
+			this.funnelManagerOpen = false;
+			this.funnelEditing = null;
+		},
+
+		startNewFunnel() {
+			this.funnelFormError = "";
+			this.funnelEditing = {
+				id: null,
+				name: "",
+				window_hours: 168,
+				steps: [{ event_name: "", label: "" }, { event_name: "", label: "" }],
+			};
+		},
+
+		startEditFunnel(f) {
+			this.funnelFormError = "";
+			this.funnelEditing = {
+				id: f.id,
+				name: f.name,
+				window_hours: f.window_hours || 168,
+				steps: f.steps.map((s) => ({ event_name: s.event_name, label: s.label })),
+			};
+		},
+
+		cancelEditFunnel() {
+			this.funnelEditing = null;
+			this.funnelFormError = "";
+		},
+
+		availableEventNamesFor(stepIndex) {
+			const current = this.funnelEditing.steps[stepIndex].event_name;
+			const usedElsewhere = this.funnelEditing.steps
+				.filter((_, i) => i !== stepIndex)
+				.map((s) => s.event_name)
+				.filter(Boolean);
+			return this.availableEventNames.filter((n) => n === current || !usedElsewhere.includes(n));
+		},
+
+		addFunnelStep() {
+			this.funnelEditing.steps.push({ event_name: "", label: "" });
+		},
+
+		removeFunnelStep(i) {
+			if (this.funnelEditing.steps.length <= 2) return;
+			this.funnelEditing.steps.splice(i, 1);
+		},
+
+		async saveFunnel() {
+			const f = this.funnelEditing;
+			if (!f.name.trim()) {
+				this.funnelFormError = "Funnel name is required.";
+				return;
+			}
+			const steps = f.steps.filter((s) => s.event_name);
+			if (steps.length < 2) {
+				this.funnelFormError = "At least 2 steps with an event selected are required.";
+				return;
+			}
+
+			this.funnelSaving = true;
+			this.funnelFormError = "";
+			try {
+				const body = JSON.stringify({ name: f.name, window_hours: f.window_hours || 168, steps });
+				const url = f.id ? `/api/funnels/${f.id}` : "/api/funnels";
+				const method = f.id ? "PUT" : "POST";
+				const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body });
+				if (!res.ok) {
+					this.funnelFormError = "Failed to save funnel.";
+					return;
+				}
+				this.funnelEditing = null;
+				const [rows, defs] = await Promise.all([
+					this.fetchJSON(`/api/stats/funnels?${this.dateRangeParams()}`),
+					this.fetchJSON("/api/funnels"),
+				]);
+				this.loadFunnels(rows);
+				this.funnelDefs = defs || [];
+			} catch {
+				this.funnelFormError = "Couldn't reach the server.";
+			} finally {
+				this.funnelSaving = false;
+			}
+		},
+
+		async deleteFunnel(id) {
+			try {
+				await fetch(`/api/funnels/${id}`, { method: "DELETE" });
+				const [rows, defs] = await Promise.all([
+					this.fetchJSON(`/api/stats/funnels?${this.dateRangeParams()}`),
+					this.fetchJSON("/api/funnels"),
+				]);
+				this.loadFunnels(rows || []);
+				if (rows === null || rows.length === 0) this.funnels = [];
+				this.funnelDefs = defs || [];
+			} catch {
+				// best-effort; the row simply won't disappear from the list on failure
+			}
 		},
 
 		get funnelOverallConversion() {
@@ -907,33 +1059,78 @@ function gnatDashboard() {
 			return notes[this.exportFormat] || "";
 		},
 
+		// Flattens nested metric objects ({value, value_seconds, value_pct,
+		// delta_pct, unique_events, ...}) into individual columns, e.g.
+		// unique_visitors_today -> unique_visitors_today_value,
+		// unique_visitors_today_delta_pct, etc. CSV has no concept of
+		// nesting, so without this every metric cell in the stats section
+		// just stringifies to "[object Object]". Applied for all export
+		// formats (not just CSV) so JSON/JSONL/CSV all show the same shape.
+		flattenStatsForExport(stats) {
+			if (!stats) return {};
+			const flat = {};
+			for (const [metric, val] of Object.entries(stats)) {
+				if (val && typeof val === "object" && !Array.isArray(val)) {
+					for (const [field, v] of Object.entries(val)) {
+						flat[`${metric}_${field}`] = v;
+					}
+				} else {
+					flat[metric] = val;
+				}
+			}
+			return flat;
+		},
+
+		// Splits each custom event's nested properties[] (property name +
+		// its value breakdown) into its own flat row: one row per
+		// event/property/value combination. Mirrors the funnels flatten
+		// below — nested arrays-of-objects can't live in a single CSV
+		// cell, so they get pulled out into a joinable child section
+		// (joined back to the parent by event_name) instead of a section
+		// of its own with the array crammed in as a stringified blob.
+		flattenCustomEventProperties(events) {
+			if (!events) return [];
+			const rows = [];
+			for (const evt of events) {
+				for (const prop of evt.properties || []) {
+					for (const b of prop.breakdown || []) {
+						rows.push({
+							event_name: evt.event_name,
+							property_name: prop.name,
+							value: b.value,
+							count: b.count,
+						});
+					}
+				}
+			}
+			return rows;
+		},
+
 		// Flattens every section of the raw payload into { sectionName:
 		// rows[] } — rows are always arrays, even for single-object
 		// sections like `stats`, so every downstream formatter
 		// (toCSV/toJSONL) can treat all sections uniformly.
 		buildExportSections() {
-			const data = this.rawData;
-			if (!data) return {};
-
 			const sections = {
-				stats: data.stats ? [data.stats] : [],
-				visitors_over_time: data.visitors_over_time?.points || [],
-				traffic_sources: data.traffic_sources || [],
-				top_pages: data.top_pages || [],
-				top_referrers: data.top_referrers || [],
-				countries: data.countries || [],
-				devices: data.devices || [],
-				browsers: data.browsers || [],
-				custom_events: data.custom_events || [],
-				funnels: (data.funnels || []).flatMap((f) =>
+				stats: this.stats ? [this.flattenStatsForExport(this.stats)] : [],
+				visitors_over_time: this.visitorsOverTime?.points || [],
+				traffic_sources: this.trafficSources || [],
+				top_pages: this.topPages || [],
+				top_referrers: this.topReferrers || [],
+				countries: this.countries || [],
+				devices: this.devices || [],
+				browsers: this.browsers || [],
+				// properties omitted here (nested array of objects can't
+				// live in a flat CSV cell) — see custom_event_properties
+				// below, joined back to this section by event_name.
+				custom_events: (this.customEvents || []).map(({ properties, ...rest }) => rest),
+				custom_event_properties: this.flattenCustomEventProperties(this.customEvents),
+				funnels: (this.funnels || []).flatMap((f) =>
 					(f.steps || []).map((s) => ({ funnel_id: f.id, funnel_name: f.name, ...s }))
 				),
-				retention: data.retention?.points || [],
+				retention: this.retention?.points || [],
 			};
 
-			// AI review is a single freeform object, not a row-shaped
-			// section — keep it out of the tabular export formats but
-			// still available on the JSON export via rawData directly.
 			return sections;
 		},
 
@@ -971,10 +1168,7 @@ function gnatDashboard() {
 		},
 
 		buildExportJSON() {
-			// Full fidelity: the raw payload as-is, not the flattened
-			// section shape, so nested structures (funnel steps, ai
-			// review) round-trip exactly as the dashboard received them.
-			return JSON.stringify(this.rawData, null, 2);
+			return JSON.stringify(this.buildExportSections(), null, 2);
 		},
 
 		buildExportJSONL() {
@@ -995,7 +1189,7 @@ function gnatDashboard() {
 		// data, since every section is already loaded for on-screen
 		// display anyway.
 		downloadExport() {
-			if (!this.rawData) return;
+			if (!this.stats && this.countries.length === 0 && this.topPages.length === 0) return;
 
 			const builders = { csv: this.buildExportCSV, json: this.buildExportJSON, jsonl: this.buildExportJSONL };
 			const mime = { csv: "text/csv", json: "application/json", jsonl: "application/x-ndjson" };

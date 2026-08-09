@@ -144,12 +144,6 @@
 				<span class="stat-card-value" x-text="stats.live_visitors?.value ?? '—'"></span>
 				<span class="stat-card-delta">Currently active</span>
 			</div>
-			<div class="stat-card" tabindex="0" data-tooltip="Tracked events counted so far this billing month, compared against your plan's monthly limit.">
-				<span class="stat-card-icon" style="--icon-color:#c9776a;--icon-bg:rgba(201,119,106,0.12);"><i class="fa-solid fa-gauge-high"></i></span>
-				<span class="stat-card-label">Monthly Usage</span>
-				<span class="stat-card-value" x-text="stats.monthly_usage?.value ?? '—'"></span>
-				<span class="stat-card-delta" x-text="stats.monthly_usage ? ((stats.monthly_usage.value / stats.monthly_usage.limit) * 100).toFixed(1) + '% of ' + stats.monthly_usage.limit.toLocaleString() + ' limit' : ''"></span>
-			</div>
 			<div class="stat-card" tabindex="0" data-tooltip="Average amount of time visitors spend on a single page today before navigating away or leaving.">
 				<span class="stat-card-icon" style="--icon-color:#e8c07d;--icon-bg:rgba(232,192,125,0.12);"><i class="fa-solid fa-hourglass-half"></i></span>
 				<span class="stat-card-label">Avg Time on Page</span>
@@ -401,38 +395,15 @@
 
 		</div>
 
-		<!-- AI review -->
-		<div class="gnat-section ai-review-wrap" x-show="aiReview" tabindex="0" data-tooltip="An automatically generated summary highlighting notable patterns or changes in today's traffic.">
-			<div class="ai-review-card">
-				<div class="ai-review-glow"></div>
-				<div class="ai-review-head">
-					<svg class="ai-review-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M12 2 L14.5 9.5 L22 12 L14.5 14.5 L12 22 L9.5 14.5 L2 12 L9.5 9.5 Z"/>
-					</svg>
-					<span class="ai-review-title">AI Summary</span>
-					<button
-						class="ai-review-regen"
-						@click="regenerateAIReview()"
-						:disabled="aiReviewLoading"
-						:class="aiReviewLoading && 'is-loading'"
-						aria-label="Regenerate summary"
-					>
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-							<path d="M21 12a9 9 0 1 1-2.64-6.36"/>
-							<path d="M21 3v6h-6"/>
-						</svg>
-						<span x-text="aiReviewLoading ? 'Regenerating…' : 'Regenerate'"></span>
-					</button>
-				</div>
-				<p class="ai-review-body" :class="aiReviewLoading && 'is-loading'" x-text="aiReview?.summary"></p>
-			</div>
-		</div>
-
 		</div>
 		<!-- =========================== END OVERVIEW =========================== -->
 
 		<!-- ============================= FUNNELS ============================== -->
 		<div x-show="activeTab === 'funnels'">
+
+			<div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+				<button class="view-all-btn" @click="openFunnelManager()">Manage Funnels</button>
+			</div>
 
 			<template x-if="funnels.length === 0">
 				<p class="gnat-empty">No funnels configured yet</p>
@@ -440,7 +411,7 @@
 
 			<template x-if="selectedFunnel">
 				<div>
-					<div class="pill-group" style="margin-bottom: 20px;">
+					<div class="pill-group-scroll" style="margin-bottom: 20px;">
 						<template x-for="f in funnels" :key="f.id">
 							<button class="pill" :class="selectedFunnelId === f.id && 'is-active'" @click="selectedFunnelId = f.id" x-text="f.name"></button>
 						</template>
@@ -862,6 +833,81 @@ and top referrers for the last 7 days."</code></pre>
 		</div>
 	</div>
 
+	</div>
+
+	<div class="modal-backdrop" x-show="funnelManagerOpen" x-cloak @click.self="closeFunnelManager()" @keydown.escape.window="closeFunnelManager()">
+		<div class="modal-panel" x-show="funnelManagerOpen" x-transition>
+			<div class="modal-head">
+				<span class="modal-title">Manage Funnels</span>
+				<button class="modal-close" @click="closeFunnelManager()" aria-label="Close">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="18" y1="6" x2="6" y2="18"/>
+						<line x1="6" y1="6" x2="18" y2="18"/>
+					</svg>
+				</button>
+			</div>
+			<div class="modal-body">
+
+				<template x-if="!funnelEditing">
+					<div>
+						<button class="view-all-btn" style="margin-bottom:16px;" @click="startNewFunnel()">+ New Funnel</button>
+						<template x-if="funnelDefs.length === 0">
+							<p class="gnat-empty">No funnels yet. Create one to get started.</p>
+						</template>
+						<template x-for="f in funnelDefs" :key="f.id">
+							<div class="funnel-manager-row">
+								<div>
+									<span class="funnel-manager-name" x-text="f.name"></span>
+									<span class="funnel-manager-steps" x-text="f.steps.map(s => s.label || s.event_name).join(' → ')"></span>
+								</div>
+								<div class="funnel-manager-actions">
+									<button class="funnel-action-btn" @click="startEditFunnel(f)">Edit</button>
+									<button class="funnel-action-btn funnel-action-btn-danger" @click="deleteFunnel(f.id)">Delete</button>
+								</div>
+							</div>
+						</template>
+					</div>
+				</template>
+
+				<template x-if="funnelEditing">
+					<div>
+						<label class="funnel-form-label">Funnel name</label>
+						<input type="text" class="funnel-form-input" x-model="funnelEditing.name" placeholder="e.g. Landing → Signup" />
+
+						<label class="funnel-form-label">Conversion window (hours)</label>
+						<input type="number" class="funnel-form-input" x-model.number="funnelEditing.window_hours" min="1" />
+
+						<label class="funnel-form-label">Steps (in order)</label>
+						<template x-for="(step, i) in funnelEditing.steps" :key="i">
+							<div class="funnel-step-form-row">
+								<select class="funnel-form-input" x-model="step.event_name">
+									<option value="">Select event...</option>
+									<template x-for="name in availableEventNamesFor(i)" :key="name">
+										<option :value="name" x-text="name"></option>
+									</template>
+								</select>
+								<input type="text" class="funnel-form-input" x-model="step.label" placeholder="Display label (optional)" />
+								<button class="modal-close" @click="removeFunnelStep(i)" aria-label="Remove step">
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<line x1="18" y1="6" x2="6" y2="18"/>
+										<line x1="6" y1="6" x2="18" y2="18"/>
+									</svg>
+								</button>
+							</div>
+						</template>
+						<button class="funnel-action-btn" @click="addFunnelStep()">+ Add step</button>
+
+						<p class="funnel-form-error" x-show="funnelFormError" x-text="funnelFormError"></p>
+
+						<div class="funnel-form-actions">
+							<button class="funnel-action-btn" @click="cancelEditFunnel()">Cancel</button>
+							<button class="view-all-btn" @click="saveFunnel()" x-text="funnelSaving ? 'Saving...' : 'Save Funnel'" :disabled="funnelSaving"></button>
+						</div>
+					</div>
+				</template>
+
+			</div>
+		</div>
 	</div>
 
 	<script src="/dashboard.js"></script>

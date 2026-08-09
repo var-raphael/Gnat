@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const funnelWindow = 24 * time.Hour
+const defaultFunnelWindow = 7 * 24 * time.Hour
 
 type funnelStepResult struct {
 	Step  string `json:"step"`
@@ -89,7 +89,7 @@ func FunnelsHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		results, err := computeFunnelStaged(db, steps, from, to)
+		results, err := computeFunnelStaged(db, steps, from, to, defaultFunnelWindow)
 		if err != nil {
 			http.Error(w, "query failed", http.StatusInternalServerError)
 			return
@@ -116,7 +116,7 @@ func fetchStep(db *gorm.DB, query *gorm.DB) ([]stepRow, error) {
 	return rows, nil
 }
 
-func computeFunnelStaged(db *gorm.DB, steps []string, from, to time.Time) ([]funnelStepResult, error) {
+func computeFunnelStaged(db *gorm.DB, steps []string, from, to time.Time, window time.Duration) ([]funnelStepResult, error) {
 	results := make([]funnelStepResult, len(steps))
 
 	firstQuery := db.Table("events").
@@ -170,7 +170,7 @@ func computeFunnelStaged(db *gorm.DB, steps []string, from, to time.Time) ([]fun
 			if !ok || !row.StepTS.After(prior) {
 				continue
 			}
-			if row.StepTS.Sub(anchor[row.DistinctID]) > funnelWindow {
+			if row.StepTS.Sub(anchor[row.DistinctID]) > window {
 				continue
 			}
 			newPrevTS[row.DistinctID] = row.StepTS

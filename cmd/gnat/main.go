@@ -73,7 +73,8 @@ func main() {
 	mux.HandleFunc("/api/stats/pageviews", dashAuth.RequireSession(query.PageviewsHandler(db)))
 	mux.HandleFunc("/api/stats/events", dashAuth.RequireSession(query.EventsHandler(db)))
 	mux.HandleFunc("/api/stats/referrers", dashAuth.RequireSession(query.ReferrersHandler(db)))
-	mux.HandleFunc("/api/stats/funnels", dashAuth.RequireSession(query.FunnelsHandler(db)))
+	mux.HandleFunc("/api/stats/funnels", dashAuth.RequireSession(query.FunnelResultsHandler(db)))
+	mux.HandleFunc("/api/stats/funnels-adhoc", dashAuth.RequireSession(query.FunnelsHandler(db)))
 	mux.HandleFunc("/api/stats/paths", dashAuth.RequireSession(query.PathsHandler(db)))
 	mux.HandleFunc("/api/stats/retention", dashAuth.RequireSession(query.RetentionHandler(db)))
 	mux.HandleFunc("/api/stats/countries", dashAuth.RequireSession(query.CountriesHandler(db)))
@@ -82,7 +83,12 @@ func main() {
 	mux.HandleFunc("/api/stats/pages", dashAuth.RequireSession(query.TopPagesHandler(db)))
 	mux.HandleFunc("/api/stats/traffic-sources", dashAuth.RequireSession(query.TrafficSourcesHandler(db)))
 	mux.HandleFunc("/api/stats/custom-events", dashAuth.RequireSession(query.CustomEventsHandler(db)))
+	mux.HandleFunc("/api/stats/summary", dashAuth.RequireSession(query.StatsSummaryHandler(db)))
+	mux.HandleFunc("/api/stats/live", dashAuth.RequireSession(query.LiveVisitorsHandler(db)))
 	mux.HandleFunc("/api/export", dashAuth.RequireSession(query.ExportHandler(db)))
+	mux.HandleFunc("/api/event-names", dashAuth.RequireSession(query.EventNamesHandler(db)))
+	mux.HandleFunc("/api/funnels", dashAuth.RequireSession(query.FunnelDefsHandler(db)))
+	mux.HandleFunc("/api/funnels/{id}", dashAuth.RequireSession(query.FunnelDefHandler(db)))
 
 	mux.HandleFunc("/tracker.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
