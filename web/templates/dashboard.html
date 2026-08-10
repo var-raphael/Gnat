@@ -529,27 +529,66 @@
 			<div class="gnat-section gnat-panel">
 				<h2 class="gnat-section-title">MCP Connection</h2>
 				<p class="export-copy">
-					Gnat ships with a built-in MCP server so AI agents can query your analytics
-					directly. This preview shows the shape that connection will take once it's
-					wired up here. Nothing below is a live endpoint yet.
+					Gnat ships with a built-in MCP server so AI agents can query your
+					analytics directly — traffic overview, custom events, funnels,
+					retention, and live visitors. Generate a token below, then connect
+					using either the static URL or the header-based config.
 				</p>
 
-				<p class="mcp-block-label">Example server config</p>
-				<div class="mcp-code-block" tabindex="0">
-					<button class="mcp-copy-btn" @click="copyMcpBlock('config')" :aria-label="mcpCopied === 'config' ? 'Copied' : 'Copy config'">
-						<span x-text="mcpCopied === 'config' ? 'Copied' : 'Copy'"></span>
-					</button>
-					<pre><code>{
-  "mcpServers": {
-    "gnat": {
-      "url": "https://mcp.gnat.xyz/v1/sse",
-      "transport": "sse"
-    }
-  }
-}</code></pre>
-				</div>
+				<!-- No token yet -->
+				<template x-if="!mcpHasToken && !mcpNewToken">
+					<div class="mcp-token-panel">
+						<p class="mcp-block-label" style="margin-top:0">No MCP token yet</p>
+						<button class="export-download-btn" @click="generateMcpToken()" :disabled="mcpTokenLoading">
+							<span x-text="mcpTokenLoading ? 'Generating…' : 'Generate token'"></span>
+						</button>
+						<p class="mcp-footnote" x-show="mcpGenerateError" x-text="mcpGenerateError"></p>
+					</div>
+				</template>
 
-				<p class="mcp-block-label">Example query, once live</p>
+				<!-- Token exists, but plaintext isn't known this session (reload after generating) -->
+				<template x-if="mcpHasToken && !mcpNewToken">
+					<div class="mcp-token-panel">
+						<p class="mcp-block-label" style="margin-top:0">A token is active</p>
+						<p class="export-copy">
+							For security, the token itself is only ever shown once, right after
+							it's generated. If you don't have it saved, regenerate to get a new
+							one — this immediately invalidates the old one.
+						</p>
+						<button class="export-download-btn" @click="generateMcpToken()" :disabled="mcpTokenLoading">
+							<span x-text="mcpTokenLoading ? 'Generating…' : 'Regenerate token'"></span>
+						</button>
+						<p class="mcp-footnote" x-show="mcpGenerateError" x-text="mcpGenerateError"></p>
+					</div>
+				</template>
+
+				<!-- Just generated: show plaintext once -->
+				<template x-if="mcpNewToken">
+					<div class="mcp-token-panel">
+						<p class="mcp-block-label" style="margin-top:0">Your new token — copy it now, it won't be shown again</p>
+						<div class="mcp-code-block" tabindex="0">
+							<button class="mcp-copy-btn" @click="copyMcpBlock('url')" :aria-label="mcpCopied === 'url' ? 'Copied' : 'Copy URL'">
+								<span x-text="mcpCopied === 'url' ? 'Copied' : 'Copy'"></span>
+							</button>
+							<pre><code x-text="mcpConnectUrl()"></code></pre>
+						</div>
+
+						<p class="mcp-block-label">Example server config</p>
+						<div class="mcp-code-block" tabindex="0">
+							<button class="mcp-copy-btn" @click="copyMcpBlock('config')" :aria-label="mcpCopied === 'config' ? 'Copied' : 'Copy config'">
+								<span x-text="mcpCopied === 'config' ? 'Copied' : 'Copy'"></span>
+							</button>
+							<pre><code x-text="mcpConfigBlock()"></code></pre>
+						</div>
+
+						<button class="export-download-btn" @click="generateMcpToken()" :disabled="mcpTokenLoading">
+							<span x-text="mcpTokenLoading ? 'Generating…' : 'Regenerate token'"></span>
+						</button>
+						<p class="mcp-footnote" x-show="mcpGenerateError" x-text="mcpGenerateError"></p>
+					</div>
+				</template>
+
+				<p class="mcp-block-label">Example query, once connected</p>
 				<div class="mcp-code-block" tabindex="0">
 					<button class="mcp-copy-btn" @click="copyMcpBlock('query')" :aria-label="mcpCopied === 'query' ? 'Copied' : 'Copy query'">
 						<span x-text="mcpCopied === 'query' ? 'Copied' : 'Copy'"></span>
@@ -559,7 +598,13 @@
 and top referrers for the last 7 days."</code></pre>
 				</div>
 
-				<p class="mcp-footnote">Want early access when this ships? Reach out from the About tab.</p>
+				<p class="mcp-footnote">
+					Clients that support custom headers can instead connect to
+					<code x-text="window.location.origin + '/mcp/sse'"></code>
+					with an <code>Authorization: Bearer &lt;token&gt;</code> header — that keeps
+					the token out of any URL, logs, or saved config file. Regenerating
+					invalidates every existing connection immediately.
+				</p>
 			</div>
 
 		</div>

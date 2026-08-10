@@ -16,11 +16,11 @@ type funnelStepResult struct {
 	Count int64  `json:"count"`
 }
 
-// stepRowRaw matches what SQLite actually returns for a MIN(timestamp)
-// aggregate: text, not a native datetime type. SQLite has no dedicated
-// datetime storage class, so aggregating a datetime column always comes
-// back as a string; GORM's driver can only auto-scan that into
-// time.Time for direct (non-aggregated) column reads.
+// stepRowRaw matches what a MIN(timestamp) aggregate scans into a Go
+// string on SQLite and MySQL: neither driver auto-converts an
+// aggregated datetime expression into time.Time the way it would for a
+// direct (non-aggregated) column read, so the raw text layout has to
+// be parsed by hand. See parseAggregateTime.
 type stepRowRaw struct {
 	DistinctID string
 	StepTS     string
@@ -31,9 +31,20 @@ type stepRow struct {
 	StepTS     time.Time
 }
 
-// sqliteTimeFormats covers the layouts SQLite/GORM commonly produce for
-// stored timestamps, tried in order until one parses successfully.
-var sqliteTimeFormats = []string{
+// aggregateTimeFormats covers the raw text layouts a MIN/MAX(datetime)
+// aggregate comes back as when scanned into a Go string, tried in
+// order until one parses successfully.
+//
+//   - SQLite has no dedicated datetime storage class, so it always
+//     stores/returns timestamps as text, in whichever of these
+//     variants GORM happened to write.
+//   - MySQL (via go-sql-driver/mysql) only auto-parses a DATETIME/
+//     TIMESTAMP column into time.Time when the destination struct
+//     field is itself time.Time; scanned into a string (as these
+//     aggregate queries do), it comes back as "2006-01-02 15:04:05"
+//     (with fractional seconds if the column stores them), regardless
+//     of the parseTime=True DSN option.
+var aggregateTimeFormats = []string{
 	"2006-01-02 15:04:05.999999999-07:00",
 	"2006-01-02 15:04:05.999999999Z07:00",
 	time.RFC3339Nano,
@@ -42,9 +53,13 @@ var sqliteTimeFormats = []string{
 	"2006-01-02 15:04:05",
 }
 
-func parseSQLiteTime(s string) (time.Time, error) {
+// parseAggregateTime parses the raw text layout a MIN/MAX(datetime)
+// aggregate comes back as, across every supported driver. See
+// aggregateTimeFormats for why this can't just rely on GORM's normal
+// automatic time.Time scanning.
+func parseAggregateTime(s string) (time.Time, error) {
 	var lastErr error
-	for _, layout := range sqliteTimeFormats {
+	for _, layout := range aggregateTimeFormats {
 		t, err := time.Parse(layout, s)
 		if err == nil {
 			return t, nil
@@ -58,10 +73,10 @@ func parseSQLiteTime(s string) (time.Time, error) {
 //
 // steps is a comma-separated ordered list of event names, at least 2.
 // Staged per-step queries: each step's MIN(timestamp) per visitor is
-// fetched via SQLite aggregation, scoped to only visitors still in
-// contention from the previous step, so memory tracks shrinking visitor
-// counts rather than total matching events. SQLite-specific; Postgres/
-// MySQL support is a known deferred gap.
+// fetched via aggregation, scoped to only visitors still in contention
+// from the previous step, so memory tracks shrinking visitor counts
+// rather than total matching events. Supports SQLite and MySQL;
+// Postgres support is a known deferred gap (see internal/dialect).
 func FunnelsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -107,7 +122,7 @@ func fetchStep(db *gorm.DB, query *gorm.DB) ([]stepRow, error) {
 	}
 	rows := make([]stepRow, 0, len(raw))
 	for _, r := range raw {
-		ts, err := parseSQLiteTime(r.StepTS)
+		ts, err := parseAggregateTime(r.StepTS)
 		if err != nil {
 			continue // skip unparseable rows rather than fail the whole request
 		}

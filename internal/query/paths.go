@@ -24,10 +24,15 @@ type pathResult struct {
 }
 
 // anchorOccurrence is one instance of the anchor event, one visitor may
-// have several within the date range.
+// have several within the date range. Timestamp scans straight into
+// time.Time since this is a direct (non-aggregated) column read, which
+// every supported driver's GORM scanner handles natively — unlike the
+// MIN/MAX(timestamp) aggregates elsewhere in this package (see
+// parseAggregateTime in funnels.go), there's no raw-text parsing step
+// needed here.
 type anchorOccurrence struct {
 	DistinctID string
-	Timestamp  string // raw SQLite text, parsed below
+	Timestamp  time.Time
 }
 
 // PathsHandler returns GET /api/stats/paths?anchor_event=...&depth=...&from=...&to=...
@@ -94,16 +99,12 @@ func computePaths(db *gorm.DB, anchorEvent string, depth int, from, to time.Time
 	pathCounts := make(map[string]int64)
 
 	for _, occ := range occurrences {
-		anchorTS, err := parseSQLiteTime(occ.Timestamp)
-		if err != nil {
-			continue
-		}
-		windowStart := anchorTS.Add(-pathWindow)
+		windowStart := occ.Timestamp.Add(-pathWindow)
 
 		var priorRaw []stepRowRaw2
 		err = db.Table("events").
 			Select("event_name, timestamp").
-			Where("distinct_id = ? AND timestamp >= ? AND timestamp < ?", occ.DistinctID, windowStart, anchorTS).
+			Where("distinct_id = ? AND timestamp >= ? AND timestamp < ?", occ.DistinctID, windowStart, occ.Timestamp).
 			Order("timestamp DESC").
 			Limit(depth).
 			Scan(&priorRaw).Error
@@ -132,7 +133,7 @@ func computePaths(db *gorm.DB, anchorEvent string, depth int, from, to time.Time
 
 type stepRowRaw2 struct {
 	EventName string
-	Timestamp string
+	Timestamp time.Time
 }
 
 func collapseConsecutiveDuplicates(names []string) []string {

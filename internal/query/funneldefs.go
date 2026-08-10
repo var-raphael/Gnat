@@ -162,13 +162,15 @@ func funnelIDFromPath(path string) (uint, error) {
 	return uint(id), err
 }
 
-type computedFunnel struct {
-	ID    uint                `json:"id"`
-	Name  string              `json:"name"`
-	Steps []funnelStepResult2 `json:"steps"`
+// ComputedFunnel is one saved funnel's step-by-step counts for a range.
+type ComputedFunnel struct {
+	ID    uint               `json:"id"`
+	Name  string             `json:"name"`
+	Steps []FunnelStepResult `json:"steps"`
 }
 
-type funnelStepResult2 struct {
+// FunnelStepResult is one step's label and count within a computed funnel.
+type FunnelStepResult struct {
 	Label string `json:"label"`
 	Count int64  `json:"count"`
 }
@@ -188,43 +190,53 @@ func FunnelResultsHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		var funnels []storage.Funnel
-		if err := db.Order("created_at").Find(&funnels).Error; err != nil {
+		results, err := GetFunnelResults(db, from, to)
+		if err != nil {
 			http.Error(w, "query failed", http.StatusInternalServerError)
 			return
-		}
-
-		results := make([]computedFunnel, 0, len(funnels))
-		for _, f := range funnels {
-			var steps []funnelStepDef
-			if err := json.Unmarshal([]byte(f.Steps), &steps); err != nil || len(steps) < 2 {
-				continue
-			}
-			eventNames := make([]string, len(steps))
-			for i, s := range steps {
-				eventNames[i] = s.EventName
-			}
-
-			window := time.Duration(f.WindowHours) * time.Hour
-			stepResults, err := computeFunnelStaged(db, eventNames, from, to, window)
-			if err != nil {
-				http.Error(w, "query failed", http.StatusInternalServerError)
-				return
-			}
-
-			out := make([]funnelStepResult2, len(stepResults))
-			for i, sr := range stepResults {
-				label := steps[i].Label
-				if label == "" {
-					label = sr.Step
-				}
-				out[i] = funnelStepResult2{Label: label, Count: sr.Count}
-			}
-
-			results = append(results, computedFunnel{ID: f.ID, Name: f.Name, Steps: out})
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(results)
 	}
+}
+
+// GetFunnelResults loads every saved funnel and computes its
+// step-by-step results for the given range.
+func GetFunnelResults(db *gorm.DB, from, to time.Time) ([]ComputedFunnel, error) {
+	var funnels []storage.Funnel
+	if err := db.Order("created_at").Find(&funnels).Error; err != nil {
+		return nil, err
+	}
+
+	results := make([]ComputedFunnel, 0, len(funnels))
+	for _, f := range funnels {
+		var steps []funnelStepDef
+		if err := json.Unmarshal([]byte(f.Steps), &steps); err != nil || len(steps) < 2 {
+			continue
+		}
+		eventNames := make([]string, len(steps))
+		for i, s := range steps {
+			eventNames[i] = s.EventName
+		}
+
+		window := time.Duration(f.WindowHours) * time.Hour
+		stepResults, err := computeFunnelStaged(db, eventNames, from, to, window)
+		if err != nil {
+			return nil, err
+		}
+
+		out := make([]FunnelStepResult, len(stepResults))
+		for i, sr := range stepResults {
+			label := steps[i].Label
+			if label == "" {
+				label = sr.Step
+			}
+			out[i] = FunnelStepResult{Label: label, Count: sr.Count}
+		}
+
+		results = append(results, ComputedFunnel{ID: f.ID, Name: f.Name, Steps: out})
+	}
+
+	return results, nil
 }

@@ -29,12 +29,11 @@ const (
 // bucket rows per day. column should be a bare column name, e.g.
 // "timestamp" — callers are responsible for any table-qualification.
 //
-// Only SQLite is implemented today, since that's the only driver
-// actually exercised so far. Postgres/MySQL panic deliberately rather
-// than silently returning SQLite syntax that would fail at query time
-// with a much more confusing error — this is meant to be the very
-// first thing that breaks, loudly, the moment either driver is
-// switched on, so it's obvious what still needs implementing.
+// SQLite and MySQL are implemented. Postgres panics deliberately rather
+// than silently returning syntax that would fail at query time with a
+// much more confusing error — this is meant to be the very first thing
+// that breaks, loudly, the moment that driver is switched on, so it's
+// obvious what still needs implementing.
 func DateTrunc(driver, column string) string {
 	switch driver {
 	case SQLite:
@@ -42,7 +41,7 @@ func DateTrunc(driver, column string) string {
 	case Postgres:
 		panic("dialect.DateTrunc: postgres not yet implemented")
 	case MySQL:
-		panic("dialect.DateTrunc: mysql not yet implemented")
+		return fmt.Sprintf("DATE(%s)", column)
 	default:
 		panic("dialect.DateTrunc: unknown driver " + driver)
 	}
@@ -55,8 +54,8 @@ func DateTrunc(driver, column string) string {
 // callers needing nested paths will need to extend this signature when
 // that need actually arises.
 //
-// Same deliberate-panic behavior as DateTrunc for unimplemented
-// drivers, and for the same reason.
+// Same deliberate-panic behavior as DateTrunc for the still-unimplemented
+// Postgres driver, and for the same reason.
 func JSONExtract(driver, column, path string) string {
 	switch driver {
 	case SQLite:
@@ -64,7 +63,13 @@ func JSONExtract(driver, column, path string) string {
 	case Postgres:
 		panic("dialect.JSONExtract: postgres not yet implemented")
 	case MySQL:
-		panic("dialect.JSONExtract: mysql not yet implemented")
+		// MySQL's JSON_EXTRACT returns the value still JSON-quoted
+		// (e.g. "\"/pricing\"" instead of "/pricing"), so JSON_UNQUOTE
+		// is required to get a plain string back — otherwise every
+		// value in a GROUP BY or WHERE would carry literal quote
+		// characters and never match/group the way SQLite's
+		// already-unquoted json_extract does.
+		return fmt.Sprintf("JSON_UNQUOTE(JSON_EXTRACT(%s, '$.%s'))", column, path)
 	default:
 		panic("dialect.JSONExtract: unknown driver " + driver)
 	}

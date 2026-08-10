@@ -20,21 +20,26 @@ type cohortResult struct {
 	Retention  map[string]float64 `json:"retention"`    // "day_0", "day_1", etc -> percentage
 }
 
-// firstSeenRow is one visitor's first-ever event, raw SQLite text.
+// firstSeenRow is one visitor's first-ever event, raw aggregate text
+// (see parseAggregateTime in funnels.go for why this can't be scanned
+// straight into time.Time).
 type firstSeenRow struct {
 	DistinctID string
 	FirstSeen  string
 }
 
-type retentionPoint struct {
+// RetentionPoint is one checkpoint (e.g. "Day 7") in a retention curve.
+type RetentionPoint struct {
 	Label string  `json:"label"`
 	Pct   float64 `json:"pct"`
 }
 
-type retentionResponse struct {
+// RetentionResponse is a single retention curve aggregated across every
+// cohort in a range.
+type RetentionResponse struct {
 	CohortSize int64            `json:"cohort_size"`
 	Unit       string           `json:"unit"`
-	Points     []retentionPoint `json:"points"`
+	Points     []RetentionPoint `json:"points"`
 }
 
 // RetentionHandler returns GET /api/stats/retention?from=...&to=...
@@ -54,27 +59,37 @@ func RetentionHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		cohorts, err := computeRetention(db, from, to)
+		result, err := GetRetention(db, from, to)
 		if err != nil {
 			http.Error(w, "query failed", http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(aggregateCohorts(cohorts))
+		json.NewEncoder(w).Encode(result)
 	}
+}
+
+// GetRetention computes the retention curve aggregated across every
+// cohort whose first-seen day falls within from/to.
+func GetRetention(db *gorm.DB, from, to time.Time) (RetentionResponse, error) {
+	cohorts, err := computeRetention(db, from, to)
+	if err != nil {
+		return RetentionResponse{}, err
+	}
+	return aggregateCohorts(cohorts), nil
 }
 
 // aggregateCohorts combines multiple cohorts into a single weighted
 // retention curve: each checkpoint's pct is the total active count
 // across all cohorts at that checkpoint, divided by total cohort size.
-func aggregateCohorts(cohorts []cohortResult) retentionResponse {
+func aggregateCohorts(cohorts []cohortResult) RetentionResponse {
 	var totalSize int64
 	for _, c := range cohorts {
 		totalSize += c.Size
 	}
 
-	points := make([]retentionPoint, 0, len(retentionCheckpoints))
+	points := make([]RetentionPoint, 0, len(retentionCheckpoints))
 	for _, checkpoint := range retentionCheckpoints {
 		key := checkpointKey(checkpoint)
 		var activeTotal float64
@@ -85,10 +100,10 @@ func aggregateCohorts(cohorts []cohortResult) retentionResponse {
 		if totalSize > 0 {
 			pct = roundTo2(activeTotal / float64(totalSize) * 100)
 		}
-		points = append(points, retentionPoint{Label: "Day " + itoa(checkpoint), Pct: pct})
+		points = append(points, RetentionPoint{Label: "Day " + itoa(checkpoint), Pct: pct})
 	}
 
-	return retentionResponse{CohortSize: totalSize, Unit: "day", Points: points}
+	return RetentionResponse{CohortSize: totalSize, Unit: "day", Points: points}
 }
 
 func computeRetention(db *gorm.DB, from, to time.Time) ([]cohortResult, error) {
@@ -110,7 +125,7 @@ func computeRetention(db *gorm.DB, from, to time.Time) ([]cohortResult, error) {
 	firstSeenByVisitor := make(map[string]time.Time)
 
 	for _, row := range firstSeenRaw {
-		ts, err := parseSQLiteTime(row.FirstSeen)
+		ts, err := parseAggregateTime(row.FirstSeen)
 		if err != nil {
 			continue
 		}

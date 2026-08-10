@@ -10,8 +10,8 @@ import (
 	"github.com/var-raphael/gnat/internal/dialect"
 )
 
-// pageviewPoint is one bucket in the pageviews-over-time series.
-type pageviewPoint struct {
+// PageviewPoint is one bucket in the pageviews-over-time series.
+type PageviewPoint struct {
 	Date  string `json:"date"`
 	Count int64  `json:"count"`
 }
@@ -34,33 +34,10 @@ func PageviewsHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		var results []pageviewPoint
-
-		// Grouped by calendar day via dialect.DateTrunc, the one seam
-		// isolated per internal/dialect's package doc — everything else
-		// in this query is portable GORM as-is.
-		dateExpr := dialect.DateTrunc(db.Dialector.Name(), "timestamp")
-		err = db.Table("events").
-			Select(dateExpr + " as date, count(*) as count").
-			Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
-			Group("date").
-			Order("date").
-			Scan(&results).Error
-
+		filled, err := GetPageviewsOverTime(db, from, to)
 		if err != nil {
 			http.Error(w, "query failed", http.StatusInternalServerError)
 			return
-		}
-
-		byDate := make(map[string]int64, len(results))
-		for _, r := range results {
-			byDate[r.Date] = r.Count
-		}
-
-		filled := make([]pageviewPoint, 0)
-		for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
-			key := d.Format("2006-01-02")
-			filled = append(filled, pageviewPoint{Date: key, Count: byDate[key]})
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -68,23 +45,65 @@ func PageviewsHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// GetPageviewsOverTime returns daily pageview counts between from and
+// to (inclusive), with days that had zero pageviews filled in as 0
+// rather than omitted.
+func GetPageviewsOverTime(db *gorm.DB, from, to time.Time) ([]PageviewPoint, error) {
+	var results []PageviewPoint
+
+	// Grouped by calendar day via dialect.DateTrunc, the one seam
+	// isolated per internal/dialect's package doc — everything else
+	// in this query is portable GORM as-is.
+	dateExpr := dialect.DateTrunc(db.Dialector.Name(), "timestamp")
+	err := db.Table("events").
+		Select(dateExpr + " as date, count(*) as count").
+		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
+		Group("date").
+		Order("date").
+		Scan(&results).Error
+	if err != nil {
+		return nil, err
+	}
+
+	byDate := make(map[string]int64, len(results))
+	for _, r := range results {
+		byDate[r.Date] = r.Count
+	}
+
+	filled := make([]PageviewPoint, 0)
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		key := d.Format("2006-01-02")
+		filled = append(filled, PageviewPoint{Date: key, Count: byDate[key]})
+	}
+
+	return filled, nil
+}
+
 // parseRange reads from/to query params, defaulting to the last 7 days
 // if either is missing.
 func parseRange(r *http.Request) (time.Time, time.Time, error) {
+	return ParseDateRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"))
+}
+
+// ParseDateRange parses optional from/to YYYY-MM-DD strings, defaulting
+// to the last 7 days if either is missing. Shared by the HTTP handlers
+// (via parseRange) and the MCP tools, which take the same from/to
+// strings directly as tool arguments instead of query params.
+func ParseDateRange(fromStr, toStr string) (time.Time, time.Time, error) {
 	now := time.Now().UTC()
 	from := now.AddDate(0, 0, -7)
 	to := now
 
-	if v := r.URL.Query().Get("from"); v != "" {
-		parsed, err := time.Parse("2006-01-02", v)
+	if fromStr != "" {
+		parsed, err := time.Parse("2006-01-02", fromStr)
 		if err != nil {
 			return from, to, errBadDate("from")
 		}
 		from = parsed
 	}
 
-	if v := r.URL.Query().Get("to"); v != "" {
-		parsed, err := time.Parse("2006-01-02", v)
+	if toStr != "" {
+		parsed, err := time.Parse("2006-01-02", toStr)
 		if err != nil {
 			return from, to, errBadDate("to")
 		}

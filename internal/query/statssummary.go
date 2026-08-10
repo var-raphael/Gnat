@@ -37,7 +37,8 @@ func withDelta(d float64) *float64 {
 	return &d
 }
 
-type statsSummary struct {
+// StatsSummary holds today-vs-yesterday headline numbers.
+type StatsSummary struct {
 	UniqueVisitorsToday  statValue `json:"unique_visitors_today"`
 	PageviewsToday       statValue `json:"pageviews_today"`
 	LiveVisitors         statValue `json:"live_visitors"`
@@ -138,8 +139,23 @@ func StatsSummaryHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func computeSummary(db *gorm.DB, now, todayStart, todayEnd, yesterdayStart, yesterdayEnd time.Time) (statsSummary, error) {
-	var result statsSummary
+// ComputeSummary returns today-vs-yesterday headline numbers, anchored
+// at now (UTC "today" is derived from now's calendar date). This is
+// the same computation StatsSummaryHandler serves over HTTP, exposed
+// directly for callers (like the MCP tools) that want the struct
+// rather than a JSON response.
+func ComputeSummary(db *gorm.DB, now time.Time) (StatsSummary, error) {
+	now = now.UTC()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	todayEnd := todayStart.Add(24*time.Hour - time.Nanosecond)
+	yesterdayStart := todayStart.AddDate(0, 0, -1)
+	yesterdayEnd := todayStart.Add(-time.Nanosecond)
+
+	return computeSummary(db, now, todayStart, todayEnd, yesterdayStart, yesterdayEnd)
+}
+
+func computeSummary(db *gorm.DB, now, todayStart, todayEnd, yesterdayStart, yesterdayEnd time.Time) (StatsSummary, error) {
+	var result StatsSummary
 
 	uniqToday, err := countDistinct(db, "distinct_id", "", todayStart, todayEnd)
 	if err != nil {

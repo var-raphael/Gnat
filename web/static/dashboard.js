@@ -93,11 +93,16 @@ function gnatDashboard() {
 		exportFormat: "csv", // "csv" | "json" | "jsonl"
 
 		// mcp
-		mcpCopied: "", // "" | "config" | "query" — which code block was just copied
+		mcpCopied: "", // "" | "config" | "url" | "query" — which block was just copied
+		mcpHasToken: false,
+		mcpTokenLoading: false,
+		mcpNewToken: "", // plaintext, only ever held in memory right after generating
+		mcpGenerateError: "",
 
 		// live-refresh polling (stats + live visitors only — see startPolling)
 		_pollTimer: null,
 		_pollIntervalMs: 30000,
+		_mcpStatusLoaded: false,
 
 		async init() {
 			const saved = localStorage.getItem("_gnat_theme");
@@ -672,6 +677,10 @@ function gnatDashboard() {
 						this.renderDonut();
 					});
 				}
+				if (tab === "mcp" && !this._mcpStatusLoaded) {
+					this._mcpStatusLoaded = true;
+					this.loadMcpTokenStatus();
+				}
 			});
 		},
 
@@ -1213,17 +1222,72 @@ function gnatDashboard() {
 		},
 
 		// ---- mcp -----------------------------------------------------
+		//
+		// The static connect URL embeds the token directly in the path
+		// (/mcp/{token}/sse) for clients that can only be configured with
+		// a bare URL. The plaintext token is only ever known right after
+		// generate() returns it — mcpHasToken (from the status endpoint)
+		// never carries the value itself, so a page reload always shows
+		// "Regenerate" with no way to recover the old connect URL, only
+		// issue a new one.
+
+		mcpConnectUrl() {
+			if (!this.mcpNewToken) return "";
+			return `${window.location.origin}/mcp/${this.mcpNewToken}/sse`;
+		},
+
+		mcpConfigBlock() {
+			const url = this.mcpNewToken
+				? this.mcpConnectUrl()
+				: `${window.location.origin}/mcp/sse`;
+			const auth = this.mcpNewToken
+				? ""
+				: `,
+      "headers": { "Authorization": "Bearer YOUR_TOKEN" }`;
+			return `{
+  "mcpServers": {
+    "gnat": {
+      "url": "${url}",
+      "transport": "sse"${auth}
+    }
+  }
+}`;
+		},
+
+		async loadMcpTokenStatus() {
+			const status = await this.fetchJSON("/api/dashboard/mcp-token");
+			this.mcpHasToken = !!(status && status.has_token);
+		},
+
+		async generateMcpToken() {
+			if (
+				this.mcpHasToken &&
+				!confirm("Regenerating replaces the current token. Any agent using the old one will stop working. Continue?")
+			) {
+				return;
+			}
+			this.mcpTokenLoading = true;
+			this.mcpGenerateError = "";
+			try {
+				const res = await fetch("/api/dashboard/mcp-token/generate", { method: "POST" });
+				if (!res.ok) {
+					this.mcpGenerateError = "Failed to generate token.";
+					return;
+				}
+				const data = await res.json();
+				this.mcpNewToken = data.token;
+				this.mcpHasToken = true;
+			} catch {
+				this.mcpGenerateError = "Couldn't reach the server.";
+			} finally {
+				this.mcpTokenLoading = false;
+			}
+		},
 
 		async copyMcpBlock(which) {
 			const blocks = {
-				config: `{
-  "mcpServers": {
-    "gnat": {
-      "url": "https://mcp.gnat.xyz/v1/sse",
-      "transport": "sse"
-    }
-  }
-}`,
+				config: this.mcpConfigBlock(),
+				url: this.mcpConnectUrl(),
 				query: `Ask your agent:
 "Using the gnat MCP server, get unique visitors
 and top referrers for the last 7 days."`,

@@ -70,7 +70,28 @@ type Funnel struct {
 	UpdatedAt   time.Time
 }
 
+// McpToken is the single active credential that authorizes MCP server
+// requests, kept entirely separate from DashboardPassword (env-config,
+// static) and dashboard sessions (in-memory, expire on their own).
+// Unlike a session, this has to survive a server restart — regenerating
+// it, then restarting, must not silently revert to a stale token — so
+// it lives in the DB rather than in memory.
+//
+// TokenHash stores a SHA-256 hash, never the raw token: this table is
+// part of an on-disk file that could end up in a backup, a copy, or
+// exposed by some unrelated bug, and a hash leaked that way is useless
+// to an attacker whereas a plaintext token would grant live access. The
+// plaintext value is generated, returned to the caller exactly once,
+// and never persisted or logged anywhere. There is intentionally at
+// most one row: regenerating replaces it rather than appending, so a
+// compromised token can be fully invalidated by generating a new one.
+type McpToken struct {
+	ID        uint `gorm:"primaryKey"`
+	TokenHash string `gorm:"uniqueIndex;not null"`
+	CreatedAt time.Time
+}
+
 // AutoMigrate runs GORM's schema migration for all models.
 func AutoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(&Site{}, &Event{}, &PathSummary{}, &Funnel{})
+	return db.AutoMigrate(&Site{}, &Event{}, &PathSummary{}, &Funnel{}, &McpToken{})
 }

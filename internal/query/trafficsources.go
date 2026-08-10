@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
 	"github.com/var-raphael/gnat/internal/dialect"
 )
 
-type trafficSourcePoint struct {
+// TrafficSourcePoint is one traffic-source bucket's pageview count for
+// a range (direct/google/social/email/referral).
+type TrafficSourcePoint struct {
 	Label    string `json:"label"`
 	Category string `json:"category"`
 	Count    int64  `json:"count"`
@@ -60,46 +63,57 @@ func TrafficSourcesHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		referrerExpr := dialect.JSONExtract(db.Dialector.Name(), "properties", "referrer")
-
-		var rows []struct {
-			Referrer string
-			SiteName string
-			Count    int64
-		}
-		err = db.Table("events").
-			Select(referrerExpr+" as referrer, sites.name as site_name, count(*) as count").
-			Joins("JOIN sites ON sites.id = events.site_id").
-			Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
-			Group("referrer, sites.name").
-			Scan(&rows).Error
+		final, err := GetTrafficSources(db, from, to)
 		if err != nil {
 			http.Error(w, "query failed", http.StatusInternalServerError)
 			return
 		}
 
-		buckets := map[string]int64{"direct": 0, "google": 0, "social": 0, "email": 0, "referral": 0}
-		for _, row := range rows {
-			cat := categorize(row.Referrer, row.SiteName)
-			buckets[cat] += row.Count
-		}
-
-		results := []trafficSourcePoint{
-			{Label: "Referral", Category: "referral", Count: buckets["referral"], Color: "#2dd4bf"},
-			{Label: "Direct", Category: "direct", Count: buckets["direct"], Color: "#7c8f92"},
-			{Label: "Google", Category: "google", Count: buckets["google"], Color: "#c9776a"},
-			{Label: "Social", Category: "social", Count: buckets["social"], Color: "#5aa9a3"},
-			{Label: "Email", Category: "email", Count: buckets["email"], Color: "#e8c07d"},
-		}
-
-		final := make([]trafficSourcePoint, 0, len(results))
-		for _, r := range results {
-			if r.Count > 0 {
-				final = append(final, r)
-			}
-		}
-
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(final)
 	}
+}
+
+// GetTrafficSources buckets pageviews in the given range into
+// direct/google/social/email/referral categories. Buckets with zero
+// count are omitted.
+func GetTrafficSources(db *gorm.DB, from, to time.Time) ([]TrafficSourcePoint, error) {
+	referrerExpr := dialect.JSONExtract(db.Dialector.Name(), "properties", "referrer")
+
+	var rows []struct {
+		Referrer string
+		SiteName string
+		Count    int64
+	}
+	err := db.Table("events").
+		Select(referrerExpr+" as referrer, sites.name as site_name, count(*) as count").
+		Joins("JOIN sites ON sites.id = events.site_id").
+		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
+		Group("referrer, sites.name").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	buckets := map[string]int64{"direct": 0, "google": 0, "social": 0, "email": 0, "referral": 0}
+	for _, row := range rows {
+		cat := categorize(row.Referrer, row.SiteName)
+		buckets[cat] += row.Count
+	}
+
+	results := []TrafficSourcePoint{
+		{Label: "Referral", Category: "referral", Count: buckets["referral"], Color: "#2dd4bf"},
+		{Label: "Direct", Category: "direct", Count: buckets["direct"], Color: "#7c8f92"},
+		{Label: "Google", Category: "google", Count: buckets["google"], Color: "#c9776a"},
+		{Label: "Social", Category: "social", Count: buckets["social"], Color: "#5aa9a3"},
+		{Label: "Email", Category: "email", Count: buckets["email"], Color: "#e8c07d"},
+	}
+
+	final := make([]TrafficSourcePoint, 0, len(results))
+	for _, r := range results {
+		if r.Count > 0 {
+			final = append(final, r)
+		}
+	}
+	return final, nil
 }

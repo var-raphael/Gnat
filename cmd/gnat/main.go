@@ -11,6 +11,7 @@ import (
 	"github.com/var-raphael/gnat/internal/config"
 	"github.com/var-raphael/gnat/internal/geo"
 	"github.com/var-raphael/gnat/internal/ingest"
+	gnatmcp "github.com/var-raphael/gnat/internal/mcp"
 	"github.com/var-raphael/gnat/internal/query"
 	"github.com/var-raphael/gnat/internal/storage"
 )
@@ -46,6 +47,7 @@ func main() {
 
 	sessionStore := auth.NewSessionStore()
 	dashAuth := auth.NewDashboardAuth(cfg.DashboardPassword, sessionStore, cfg.Server.PublicURL)
+	mcpTokenStore := auth.NewMcpTokenStore(db)
 
 	log.Printf("gnat starting on :%d (db: %s, sites: %v)", cfg.Server.BindPort, cfg.Database.Driver, cfg.Sites)
 
@@ -89,6 +91,25 @@ func main() {
 	mux.HandleFunc("/api/event-names", dashAuth.RequireSession(query.EventNamesHandler(db)))
 	mux.HandleFunc("/api/funnels", dashAuth.RequireSession(query.FunnelDefsHandler(db)))
 	mux.HandleFunc("/api/funnels/{id}", dashAuth.RequireSession(query.FunnelDefHandler(db)))
+
+	// MCP token management: dashboard-login-gated, same trust level as
+	// editing a funnel. Generating/viewing status never exposes the
+	// token itself except in the moment it's created — see mcptoken.go.
+	mux.HandleFunc("/api/dashboard/mcp-token", dashAuth.RequireSession(auth.McpTokenStatusHandler(mcpTokenStore)))
+	mux.HandleFunc("/api/dashboard/mcp-token/generate", dashAuth.RequireSession(auth.McpTokenGenerateHandler(mcpTokenStore)))
+
+	// MCP server: gated by its own token, deliberately independent of
+	// dashboard sessions (an MCP client is not a browser, and was never
+	// expected to hold a dashboard session cookie). Two auth paths land
+	// on the same handler: an Authorization header (preferred — never
+	// ends up logged in a URL) and a token path segment, for clients
+	// that can only be configured with a bare URL. See
+	// auth.McpTokenMiddleware for the full reasoning.
+	mcpHandler := gnatmcp.Handler(db, func(h http.HandlerFunc) http.HandlerFunc {
+		return auth.McpTokenMiddleware(mcpTokenStore, h)
+	})
+	mux.Handle("/mcp/sse", mcpHandler)
+	mux.Handle("/mcp/{token}/sse", mcpHandler)
 
 	mux.HandleFunc("/tracker.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")

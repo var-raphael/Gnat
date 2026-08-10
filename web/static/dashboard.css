@@ -1619,6 +1619,11 @@ body {
 .export-download-btn svg {
 	flex-shrink: 0;
 }
+.export-download-btn:disabled {
+	opacity: 0.55;
+	cursor: default;
+	transform: none;
+}
 
 /* ---------------------------------------------------------------------
    MCP tab
@@ -1642,16 +1647,17 @@ body {
 	border-radius: 8px;
 	padding: 14px 16px;
 	max-width: 480px;
-	overflow-x: auto;
 }
 
 .mcp-code-block pre {
 	margin: 0;
+	padding-right: 60px;
 	font-family: var(--font-mono);
 	font-size: 12px;
 	line-height: 1.6;
 	color: var(--fg);
 	white-space: pre;
+	overflow-x: auto;
 }
 
 .mcp-copy-btn {
@@ -1682,6 +1688,27 @@ body {
 	font-size: 12px;
 	color: var(--fg-muted);
 	margin-top: 22px;
+}
+.mcp-footnote code {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 1px 5px;
+}
+
+.mcp-token-panel {
+	margin-bottom: 24px;
+	padding-bottom: 24px;
+	border-bottom: 1px solid var(--border);
+}
+.mcp-token-panel .export-download-btn {
+	margin-top: 4px;
+}
+.mcp-token-panel .mcp-footnote {
+	margin-top: 10px;
+	color: #c9776a;
 }
 
 /* ---------------------------------------------------------------------
