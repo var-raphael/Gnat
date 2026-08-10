@@ -29,8 +29,6 @@ I built it because I wanted something I could point at any of my own sites, run 
 
 Gnat is built for one site per instance, matching the single-binary model. Features that only make sense once a team or several properties are involved (multi-site management, SSO, audit logs) are tracked separately on the roadmap rather than bolted onto the core tool.
 
-This project is in early development and is not yet ready for production use. The dashboard, export, and MCP access described below are all real and working today, but expect rough edges.
-
 ## Features
 
 - **Single Go binary, no CGO required.** One executable, no runtime dependencies to install alongside it.
@@ -140,10 +138,6 @@ Nothing below exists yet. Listed here so it is clear what is planned versus what
 - **Managed hosting.** For anyone who wants Gnat without running and maintaining the binary themselves.
 - **Audit logs.** A record of who exported data and who changed configuration, once more than one person has access.
 - **Postgres and full multi-driver test coverage in CI**, alongside the SQLite and MySQL paths already covered.
-
-## Status
-
-Early development. The core ingestion, storage, query, dashboard, and MCP layers all work today and are used against real traffic, but expect breaking changes and rough edges before a 1.0 tag.
 
 ## License
 
