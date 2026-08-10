@@ -1,64 +1,159 @@
-# Gnat
+<p align="center">
+  <img src="assets/gnat-logo.svg" width="96" height="96" alt="Gnat logo" />
+</p>
 
-Small, quiet, everywhere. Self-hosted analytics without the bloat.
+<h1 align="center">Gnat</h1>
 
-Gnat is a single lightweight Go binary for self-hosted, privacy-first web analytics. Download it, write a small config file, run it. No Docker, no multi-service stack, no per-language SDKs. Any backend just POSTs JSON.
+<p align="center">
+  Small, quiet, everywhere. Self-hosted analytics without the bloat.
+</p>
+
+<p align="center">
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#why-gnat">Why Gnat</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="#license">License</a>
+</p>
+
+---
+
+Gnat is a single lightweight Go binary for self-hosted, privacy-first web analytics. Download it, set a few environment variables, run it. No Docker, no multi-service stack, no per-language SDKs. Any backend just POSTs JSON to one endpoint.
 
 ## Why Gnat
 
-Most self-hosted analytics tools force a tradeoff. GoatCounter is simple to run but light on features. Plausible and PostHog are feature-rich but need a stack of services to operate. Gnat aims to combine the deployment simplicity of a single binary with real analytics depth, plus an AI-native layer that none of the others offer yet.
+Most self-hosted analytics tools force a tradeoff. GoatCounter is simple to run but light on features. Plausible and PostHog are feature-rich but need a stack of services to operate. Gnat is my attempt to combine the deployment simplicity of a single binary with real analytics depth, plus an AI-native layer that none of the others offer yet.
 
-- Single Go binary, no CGO required
-- SQLite, Postgres, or MySQL, your choice
-- Raw HTTP ingestion, no SDKs needed for any backend language
-- Funnels, cohorts, retention curves, and auto-discovered path analysis
-- Built-in MCP server so AI agents can query your analytics directly
-- Optional AI-generated summaries of your stats, using your own API key
-- CSV, JSON, and raw SQL export, it is your data
+I built it because I wanted something I could point at any of my own sites, run as one process on one small box, and never think about again, without giving up funnels, retention, and path analysis just to get that simplicity. The AI/MCP layer came out of the same instinct: I wanted to be able to ask my own analytics questions in plain language instead of building a new chart every time I had a new question.
 
-## Status
+Gnat is built for one site per instance, matching the single-binary model. Features that only make sense once a team or several properties are involved (multi-site management, SSO, audit logs) are tracked separately on the roadmap rather than bolted onto the core tool.
 
-Early development. Not ready for production use yet.
+This project is in early development and is not yet ready for production use. The dashboard, export, and MCP access described below are all real and working today, but expect rough edges.
+
+## Features
+
+- **Single Go binary, no CGO required.** One executable, no runtime dependencies to install alongside it.
+- **SQLite, Postgres, or MySQL, your choice.** Pick the backend that fits how you already run infrastructure.
+- **Raw HTTP ingestion, no SDKs needed.** Any backend language can send events with a plain JSON POST.
+- **Funnels, cohorts, retention curves, and auto-discovered path analysis.** The analytical depth that most single-binary tools skip.
+- **Built-in MCP server.** AI agents and assistants can query your analytics directly, no separate export or import step.
+- **Optional AI-generated summaries of your stats**, using your own API key with Anthropic, OpenAI, Mistral, or Ollama.
+- **CSV, JSON, and raw SQL export.** It is your data, in a format you can actually use elsewhere.
 
 ## Quickstart
 
+Requires Go 1.26 or newer.
+
 ```bash
-go build ./...
-go run ./cmd/gnat -config ./gnat.yaml
+git clone https://github.com/var-raphael/gnat.git
+cd gnat
+go build ./cmd/gnat
 ```
 
-Minimal config file:
+Gnat is configured entirely through environment variables, no config file. The quickest way to run it locally is a `.env` file in the project root, loaded automatically on startup:
 
-```yaml
-server:
-  bind_port: 8080
-  public_url: "http://localhost:8080"
+```bash
+# --- Server ---
+GNAT_BIND_PORT=8080
+GNAT_PUBLIC_URL=http://localhost:8080
 
-database:
-  driver: sqlite
-  path: "./analytics.db"
+# --- Database (sqlite is the default, zero setup required) ---
+GNAT_DB_DRIVER=sqlite
+GNAT_DB_PATH=./analytics.db
 
-api_key: "generate-a-random-secret-here"
-
-retention:
-  raw_events_days: 0
-
-updates:
-  check_for_updates: true
+# --- Required secrets ---
+GNAT_API_KEY=generate-a-random-secret-here
+GNAT_DASHBOARD_PASSWORD=another-random-secret
+GNAT_SITES=example.com
 ```
+
+Then run it:
+
+```bash
+go run ./cmd/gnat
+```
+
+The dashboard is served at `GNAT_PUBLIC_URL` (default `http://localhost:8080/dashboard`), gated by `GNAT_DASHBOARD_PASSWORD`.
+
+### Sending events
+
+Point any backend at `/api/event` with your ingest key:
+
+```bash
+curl -X POST http://localhost:8080/api/event \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: generate-a-random-secret-here" \
+  -H "Origin: https://example.com" \
+  -d '{
+    "event_name": "pageview",
+    "distinct_id": "some-stable-visitor-id",
+    "properties": { "referrer": "https://google.com" }
+  }'
+```
+
+The `Origin` header must match a domain listed in `GNAT_SITES`, or the event is silently dropped. This is the same allowlist model used to prevent random third parties from writing to your instance even if they somehow obtain the ingest key.
+
+## Configuration
+
+Every setting is an environment variable. There is no YAML or JSON config file, secrets and settings live in one place rather than split across a file and overrides.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `GNAT_BIND_PORT` | `8080` | Port the HTTP server listens on |
+| `GNAT_PUBLIC_URL` | `http://localhost:8080` | Used for links generated by the dashboard |
+| `GNAT_DB_DRIVER` | `sqlite` | `sqlite`, `postgres`, or `mysql` |
+| `GNAT_DB_PATH` | `./analytics.db` | SQLite only |
+| `GNAT_DB_HOST` | none | Postgres/MySQL only |
+| `GNAT_DB_PORT` | driver default | Postgres/MySQL only |
+| `GNAT_DB_USER` | none | Postgres/MySQL only |
+| `GNAT_DB_PASSWORD` | none | Postgres/MySQL only |
+| `GNAT_DB_NAME` | none | Postgres/MySQL only |
+| `GNAT_DB_SSLMODE` | `disable` | Postgres only |
+| `GNAT_API_KEY` | required | Authorizes writes to `/api/event` |
+| `GNAT_DASHBOARD_PASSWORD` | required | Gates the dashboard and all `/api/stats` and `/api/export` endpoints |
+| `GNAT_SITES` | required | Comma-separated allowlist of origins permitted to send events |
+| `GNAT_RETENTION_RAW_EVENTS_DAYS` | `0`, keep forever | Automatic cleanup of raw event rows |
+| `GNAT_AI_PROVIDER` | none | `anthropic`, `openai`, `mistral`, or `ollama`, for optional AI summaries |
+| `GNAT_AI_MODEL` | none | Model name for the chosen provider |
+| `GNAT_AI_API_KEY` | none | Kept separate from the ingest key and never logged |
+
+`GNAT_API_KEY` protects the ingest endpoint only. `GNAT_DASHBOARD_PASSWORD` protects everything else, including reads. They are deliberately independent so rotating one never affects the other.
 
 ## Architecture
 
 Everything runs in one process:
 
 - HTTP server and event ingestion
-- Storage via GORM, swappable between SQLite, Postgres, and MySQL
-- Query API that powers both the embedded dashboard and any custom UI
-- Embedded dashboard, served as static files via Go's embed package
-- Background jobs for path precomputation, retention cleanup, and AI summaries
-- MCP server for AI agent access
+- Storage via GORM, swappable between SQLite, Postgres, and MySQL through a small dialect layer that isolates the handful of SQL fragments that actually differ per engine
+- Query API that powers both the embedded dashboard and any custom UI you build against it
+- Embedded dashboard, served as static files straight out of the Go binary
+- Background jobs for path precomputation and retention cleanup
+- MCP server for AI agent access, authenticated by its own token, independent of dashboard sessions
+
+## Roadmap
+
+Nothing below exists yet. Listed here so it is clear what is planned versus what is already in the binary today.
+
+- **Multi-site management.** One dashboard across several properties, instead of one instance per site.
+- **SSO and team access control.** Real accounts and roles, instead of one shared password for everyone.
+- **Managed hosting.** For anyone who wants Gnat without running and maintaining the binary themselves.
+- **Audit logs.** A record of who exported data and who changed configuration, once more than one person has access.
+- **Postgres and full multi-driver test coverage in CI**, alongside the SQLite and MySQL paths already covered.
+
+## Status
+
+Early development. The core ingestion, storage, query, dashboard, and MCP layers all work today and are used against real traffic, but expect breaking changes and rough edges before a 1.0 tag.
 
 ## License
 
-Source-available, Elastic License 2.0 style. See `LICENSE`.
+Gnat is licensed under the GNU Affero General Public License v3.0, AGPLv3. See [`LICENSE`](LICENSE) for the full text.
 
+In short: you are free to self-host, modify, and use Gnat for any purpose, including commercially, inside your own organization. If you run a modified version of Gnat as a network service that other people use, you are required to make your modified source available to them under the same license. This is the same license Plausible uses, and it exists to keep the project genuinely open while preventing silent, uncredited SaaS resale of the exact same code.
+
+## Contact
+
+Found a bug, or want to report an issue? Open a GitHub issue, or reach out directly.
+
+- Portfolio: [var-raphael.vercel.app](https://var-raphael.vercel.app)
+- Email: [samuelraphael925@gmail.com](mailto:samuelraphael925@gmail.com)

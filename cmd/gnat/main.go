@@ -17,10 +17,7 @@ import (
 )
 
 func main() {
-	// Local dev convenience only: if a .env file exists, its values are
-	// loaded into the process environment. Nothing else reads from a
-	// file; every actual setting comes from config.Load() below, which
-	// looks only at real environment variables.
+
 	if err := godotenv.Load(); err != nil {
 		log.Println("no .env file found, using existing environment")
 	}
@@ -58,20 +55,15 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-	// Ingest: protected by the ingest API key only. Never gated by the
-	// dashboard session, this is a write path meant for websites/apps
-	// sending events, not for a logged-in dashboard user.
+
 	mux.HandleFunc("/api/event", ingest.Handler(db, cfg.APIKey, geoClient))
 
-	// Dashboard auth endpoints: unauthenticated by definition, since
-	// their whole job is to establish or tear down a session.
+
 	mux.HandleFunc("/api/dashboard/login", dashAuth.LoginHandler())
 	mux.HandleFunc("/api/dashboard/logout", dashAuth.LogoutHandler())
 	mux.HandleFunc("/api/dashboard/session", dashAuth.SessionHandler())
 
-	// Stats and export: read paths, gated by the dashboard session
-	// cookie rather than the ingest API key. These have no legitimate
-	// caller other than a logged-in dashboard.
+
 	mux.HandleFunc("/api/stats/pageviews", dashAuth.RequireSession(query.PageviewsHandler(db)))
 	mux.HandleFunc("/api/stats/events", dashAuth.RequireSession(query.EventsHandler(db)))
 	mux.HandleFunc("/api/stats/referrers", dashAuth.RequireSession(query.ReferrersHandler(db)))
@@ -92,19 +84,10 @@ func main() {
 	mux.HandleFunc("/api/funnels", dashAuth.RequireSession(query.FunnelDefsHandler(db)))
 	mux.HandleFunc("/api/funnels/{id}", dashAuth.RequireSession(query.FunnelDefHandler(db)))
 
-	// MCP token management: dashboard-login-gated, same trust level as
-	// editing a funnel. Generating/viewing status never exposes the
-	// token itself except in the moment it's created — see mcptoken.go.
+
 	mux.HandleFunc("/api/dashboard/mcp-token", dashAuth.RequireSession(auth.McpTokenStatusHandler(mcpTokenStore)))
 	mux.HandleFunc("/api/dashboard/mcp-token/generate", dashAuth.RequireSession(auth.McpTokenGenerateHandler(mcpTokenStore)))
 
-	// MCP server: gated by its own token, deliberately independent of
-	// dashboard sessions (an MCP client is not a browser, and was never
-	// expected to hold a dashboard session cookie). Two auth paths land
-	// on the same handler: an Authorization header (preferred — never
-	// ends up logged in a URL) and a token path segment, for clients
-	// that can only be configured with a bare URL. See
-	// auth.McpTokenMiddleware for the full reasoning.
 	mcpHandler := gnatmcp.Handler(db, func(h http.HandlerFunc) http.HandlerFunc {
 		return auth.McpTokenMiddleware(mcpTokenStore, h)
 	})
@@ -116,11 +99,6 @@ func main() {
 		http.ServeFile(w, r, "web/static/tracker.js")
 	})
 
-	// The dashboard page and its static assets are served without a
-	// session check: the page itself contains the login form, so it
-	// has to be reachable before anyone has a session. The data this
-	// page fetches (via /api/stats/* and /api/export above) is what's
-	// actually gated.
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		http.ServeFile(w, r, "web/templates/dashboard.html")

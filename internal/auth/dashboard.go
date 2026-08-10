@@ -8,27 +8,19 @@ import (
 	"time"
 )
 
-// sessionCookieName is the cookie carrying the dashboard session token.
+
 const sessionCookieName = "gnat_session"
 
-// DashboardAuth wires the configured dashboard password to a
-// SessionStore, and exposes the login/logout handlers and gating
-// middleware needed to protect the dashboard and its stats endpoints.
+
 type DashboardAuth struct {
 	password string
 	sessions *SessionStore
 
-	// secureCookies controls the cookie's Secure flag. Browsers refuse
-	// to send Secure cookies over plain http://, so this is turned off
-	// automatically for local http://localhost / http://127.0.0.1
-	// deployments and left on for everything else, since any real
-	// deployment should be behind https regardless.
+
 	secureCookies bool
 }
 
-// NewDashboardAuth builds a DashboardAuth. publicURL is the configured
-// GNAT_PUBLIC_URL, used only to decide whether the session cookie can
-// safely require https (see secureCookies above).
+
 func NewDashboardAuth(password string, sessions *SessionStore, publicURL string) *DashboardAuth {
 	return &DashboardAuth{
 		password:      password,
@@ -37,9 +29,7 @@ func NewDashboardAuth(password string, sessions *SessionStore, publicURL string)
 	}
 }
 
-// isLocalURL reports whether publicURL points at localhost/127.0.0.1
-// over plain http, the one case where requiring a Secure cookie would
-// silently break login rather than add real protection.
+
 func isLocalURL(publicURL string) bool {
 	lower := strings.ToLower(publicURL)
 	return strings.HasPrefix(lower, "http://localhost") ||
@@ -50,10 +40,7 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// LoginHandler returns POST /api/dashboard/login. On a correct password
-// it issues a session cookie; on failure it returns 401 without
-// revealing anything about why (no distinction between "no such
-// session" and "wrong password" is ever exposed to the client).
+
 func (a *DashboardAuth) LoginHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -67,12 +54,7 @@ func (a *DashboardAuth) LoginHandler() http.HandlerFunc {
 			return
 		}
 
-		// Constant-time comparison: a password check is a place where
-		// timing differences between "matched the first byte" and
-		// "matched the whole string" could in principle leak
-		// information, so this avoids the naive == comparison here
-		// even though the practical risk for a self-hosted single-user
-		// tool is low.
+
 		if !constantTimeEqual(req.Password, a.password) {
 			http.Error(w, "incorrect password", http.StatusUnauthorized)
 			return
@@ -89,9 +71,7 @@ func (a *DashboardAuth) LoginHandler() http.HandlerFunc {
 	}
 }
 
-// LogoutHandler returns POST /api/dashboard/logout. Revokes the
-// session server-side and clears the cookie client-side. Safe to call
-// even with no active session.
+
 func (a *DashboardAuth) LogoutHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -107,9 +87,7 @@ func (a *DashboardAuth) LogoutHandler() http.HandlerFunc {
 	}
 }
 
-// SessionHandler returns GET /api/dashboard/session, used by the
-// frontend on load to ask "am I currently logged in?" rather than
-// trusting a client-side flag it could set itself.
+
 func (a *DashboardAuth) SessionHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authenticated := a.isAuthenticated(r)
@@ -118,10 +96,7 @@ func (a *DashboardAuth) SessionHandler() http.HandlerFunc {
 	}
 }
 
-// RequireSession wraps a handler so it only runs for requests carrying
-// a valid session cookie. Everything else gets a 401 with no body
-// beyond a short message, since this guards both HTML (dashboard page)
-// and JSON (stats endpoints) routes alike.
+
 func (a *DashboardAuth) RequireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !a.isAuthenticated(r) {
@@ -165,10 +140,7 @@ func (a *DashboardAuth) clearSessionCookie(w http.ResponseWriter) {
 }
 
 func constantTimeEqual(a, b string) bool {
-	// subtle.ConstantTimeCompare requires equal-length inputs to be
-	// meaningful; a length mismatch is itself not a useful timing
-	// signal here (password lengths aren't secret), so it's fine to
-	// short-circuit on that before the constant-time byte comparison.
+	
 	if len(a) != len(b) {
 		return false
 	}

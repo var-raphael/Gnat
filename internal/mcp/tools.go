@@ -1,18 +1,3 @@
-// Package mcp exposes gnat's analytics data to AI agents over the Model
-// Context Protocol, using the official github.com/modelcontextprotocol/go-sdk.
-//
-// Design: a handful of broad tools (not one per dashboard card, not one
-// mega-tool) grouped by the kind of question a person actually asks in
-// one breath — "how's traffic looking" wants the overview bundle, "how's
-// the funnel doing" wants funnel data alone, etc. Each tool that isn't
-// live-visitors takes an arbitrary from/to date range and hands back
-// everything for that range; the agent decides how to use it, per the
-// product decision to let the model reason over the full picture rather
-// than pre-deciding what's relevant.
-//
-// Every tool is a thin wrapper over the same query.Get*/query.Compute*
-// functions the dashboard's HTTP handlers call — same data, same
-// semantics, no separate code path to drift out of sync.
 package mcp
 
 import (
@@ -26,10 +11,6 @@ import (
 	"github.com/var-raphael/gnat/internal/query"
 )
 
-// dateRangeInput is embedded by every tool that operates over a range.
-// from/to are optional YYYY-MM-DD strings; omitting both defaults to the
-// last 7 days, matching query.ParseDateRange's default — the same
-// default the dashboard itself uses.
 type dateRangeInput struct {
 	From string `json:"from,omitempty" jsonschema:"start date, YYYY-MM-DD, inclusive. Omit for the last 7 days."`
 	To   string `json:"to,omitempty" jsonschema:"end date, YYYY-MM-DD, inclusive. Omit to default to today."`

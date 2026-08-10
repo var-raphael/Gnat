@@ -6,17 +6,14 @@ import (
 	"github.com/mssola/user_agent"
 )
 
-// parsedUA holds the fields we actually store, derived from a raw
-// User-Agent string.
+
 type parsedUA struct {
 	Browser    string
 	OS         string
 	DeviceType string
 }
 
-// parseUserAgent extracts browser, OS, and a coarse device type from a
-// raw User-Agent header. Returns zero-value fields (all empty strings)
-// if ua is empty rather than guessing.
+
 func parseUserAgent(ua string) parsedUA {
 	if ua == "" {
 		return parsedUA{}
@@ -44,9 +41,6 @@ func parseUserAgent(ua string) parsedUA {
 	}
 }
 
-// isTablet does a simple substring check for common tablet indicators,
-// since the underlying library's Mobile() does not distinguish tablets
-// from phones on its own.
 func isTablet(ua string) bool {
 	lower := strings.ToLower(ua)
 	return strings.Contains(lower, "ipad") ||

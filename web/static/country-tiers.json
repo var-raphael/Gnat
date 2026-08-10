@@ -1,48 +1,801 @@
 {
-  "_comment": "Keyed by ISO 3166-1 alpha-2 code. Tier is a coarse proxy for ad/subscription revenue value per visitor: 1 = US/UK/EU/CA/AU/etc, 2 = upper-middle markets, 3 = everyone else. Coverage is partial for now, expand as new countries show up in real traffic.",
+  "_comment": "Keyed by ISO 3166-1 alpha-2 code. Tier is a coarse proxy for ad/subscription revenue value per visitor: 1 = US/UK/EU/CA/AU/etc, 2 = upper-middle markets, 3 = everyone else. Covers all ISO 3166-1 countries plus XK (Kosovo, common geo-IP code) and PS (Palestine).",
   "countries": {
-    "US": { "name": "United States", "tier": 1 },
-    "GB": { "name": "United Kingdom", "tier": 1 },
-    "CA": { "name": "Canada", "tier": 1 },
-    "AU": { "name": "Australia", "tier": 1 },
-    "DE": { "name": "Germany", "tier": 1 },
-    "FR": { "name": "France", "tier": 1 },
-    "NL": { "name": "Netherlands", "tier": 1 },
-    "SE": { "name": "Sweden", "tier": 1 },
-    "NO": { "name": "Norway", "tier": 1 },
-    "DK": { "name": "Denmark", "tier": 1 },
-    "CH": { "name": "Switzerland", "tier": 1 },
-    "JP": { "name": "Japan", "tier": 1 },
-    "SG": { "name": "Singapore", "tier": 1 },
-    "NZ": { "name": "New Zealand", "tier": 1 },
-    "IE": { "name": "Ireland", "tier": 1 },
-    "FI": { "name": "Finland", "tier": 1 },
-
-    "BR": { "name": "Brazil", "tier": 2 },
-    "MX": { "name": "Mexico", "tier": 2 },
-    "SA": { "name": "Saudi Arabia", "tier": 2 },
-    "AE": { "name": "United Arab Emirates", "tier": 2 },
-    "KW": { "name": "Kuwait", "tier": 2 },
-    "ZA": { "name": "South Africa", "tier": 2 },
-    "PL": { "name": "Poland", "tier": 2 },
-    "TR": { "name": "Turkey", "tier": 2 },
-    "AR": { "name": "Argentina", "tier": 2 },
-    "CL": { "name": "Chile", "tier": 2 },
-    "RO": { "name": "Romania", "tier": 2 },
-    "GR": { "name": "Greece", "tier": 2 },
-    "PT": { "name": "Portugal", "tier": 2 },
-
-    "NG": { "name": "Nigeria", "tier": 3 },
-    "GH": { "name": "Ghana", "tier": 3 },
-    "UG": { "name": "Uganda", "tier": 3 },
-    "IN": { "name": "India", "tier": 3 },
-    "PK": { "name": "Pakistan", "tier": 3 },
-    "VN": { "name": "Vietnam", "tier": 3 },
-    "MW": { "name": "Malawi", "tier": 3 },
-    "KE": { "name": "Kenya", "tier": 3 },
-    "BD": { "name": "Bangladesh", "tier": 3 },
-    "PH": { "name": "Philippines", "tier": 3 },
-    "ID": { "name": "Indonesia", "tier": 3 },
-    "EG": { "name": "Egypt", "tier": 3 }
+    "AD": {
+      "name": "Andorra",
+      "tier": 1
+    },
+    "AE": {
+      "name": "United Arab Emirates",
+      "tier": 2
+    },
+    "AF": {
+      "name": "Afghanistan",
+      "tier": 3
+    },
+    "AG": {
+      "name": "Antigua and Barbuda",
+      "tier": 3
+    },
+    "AL": {
+      "name": "Albania",
+      "tier": 2
+    },
+    "AM": {
+      "name": "Armenia",
+      "tier": 2
+    },
+    "AO": {
+      "name": "Angola",
+      "tier": 3
+    },
+    "AR": {
+      "name": "Argentina",
+      "tier": 2
+    },
+    "AT": {
+      "name": "Austria",
+      "tier": 1
+    },
+    "AU": {
+      "name": "Australia",
+      "tier": 1
+    },
+    "AZ": {
+      "name": "Azerbaijan",
+      "tier": 2
+    },
+    "BA": {
+      "name": "Bosnia and Herzegovina",
+      "tier": 2
+    },
+    "BB": {
+      "name": "Barbados",
+      "tier": 2
+    },
+    "BD": {
+      "name": "Bangladesh",
+      "tier": 3
+    },
+    "BE": {
+      "name": "Belgium",
+      "tier": 1
+    },
+    "BF": {
+      "name": "Burkina Faso",
+      "tier": 3
+    },
+    "BG": {
+      "name": "Bulgaria",
+      "tier": 3
+    },
+    "BH": {
+      "name": "Bahrain",
+      "tier": 1
+    },
+    "BI": {
+      "name": "Burundi",
+      "tier": 3
+    },
+    "BJ": {
+      "name": "Benin",
+      "tier": 3
+    },
+    "BN": {
+      "name": "Brunei",
+      "tier": 2
+    },
+    "BO": {
+      "name": "Bolivia",
+      "tier": 3
+    },
+    "BR": {
+      "name": "Brazil",
+      "tier": 2
+    },
+    "BS": {
+      "name": "Bahamas",
+      "tier": 2
+    },
+    "BT": {
+      "name": "Bhutan",
+      "tier": 3
+    },
+    "BW": {
+      "name": "Botswana",
+      "tier": 2
+    },
+    "BY": {
+      "name": "Belarus",
+      "tier": 2
+    },
+    "BZ": {
+      "name": "Belize",
+      "tier": 3
+    },
+    "CA": {
+      "name": "Canada",
+      "tier": 1
+    },
+    "CD": {
+      "name": "Congo (DRC)",
+      "tier": 3
+    },
+    "CF": {
+      "name": "Central African Republic",
+      "tier": 3
+    },
+    "CG": {
+      "name": "Congo",
+      "tier": 3
+    },
+    "CH": {
+      "name": "Switzerland",
+      "tier": 1
+    },
+    "CI": {
+      "name": "Cote d'Ivoire",
+      "tier": 3
+    },
+    "CL": {
+      "name": "Chile",
+      "tier": 2
+    },
+    "CM": {
+      "name": "Cameroon",
+      "tier": 3
+    },
+    "CN": {
+      "name": "China",
+      "tier": 2
+    },
+    "CO": {
+      "name": "Colombia",
+      "tier": 3
+    },
+    "CR": {
+      "name": "Costa Rica",
+      "tier": 2
+    },
+    "CU": {
+      "name": "Cuba",
+      "tier": 3
+    },
+    "CV": {
+      "name": "Cabo Verde",
+      "tier": 3
+    },
+    "CY": {
+      "name": "Cyprus",
+      "tier": 1
+    },
+    "CZ": {
+      "name": "Czechia",
+      "tier": 1
+    },
+    "DE": {
+      "name": "Germany",
+      "tier": 1
+    },
+    "DJ": {
+      "name": "Djibouti",
+      "tier": 3
+    },
+    "DK": {
+      "name": "Denmark",
+      "tier": 1
+    },
+    "DM": {
+      "name": "Dominica",
+      "tier": 3
+    },
+    "DO": {
+      "name": "Dominican Republic",
+      "tier": 2
+    },
+    "DZ": {
+      "name": "Algeria",
+      "tier": 3
+    },
+    "EC": {
+      "name": "Ecuador",
+      "tier": 2
+    },
+    "EE": {
+      "name": "Estonia",
+      "tier": 1
+    },
+    "EG": {
+      "name": "Egypt",
+      "tier": 3
+    },
+    "ER": {
+      "name": "Eritrea",
+      "tier": 3
+    },
+    "ES": {
+      "name": "Spain",
+      "tier": 1
+    },
+    "ET": {
+      "name": "Ethiopia",
+      "tier": 3
+    },
+    "FI": {
+      "name": "Finland",
+      "tier": 1
+    },
+    "FJ": {
+      "name": "Fiji",
+      "tier": 2
+    },
+    "FM": {
+      "name": "Micronesia",
+      "tier": 3
+    },
+    "FR": {
+      "name": "France",
+      "tier": 1
+    },
+    "GA": {
+      "name": "Gabon",
+      "tier": 2
+    },
+    "GB": {
+      "name": "United Kingdom",
+      "tier": 1
+    },
+    "GD": {
+      "name": "Grenada",
+      "tier": 3
+    },
+    "GE": {
+      "name": "Georgia",
+      "tier": 2
+    },
+    "GH": {
+      "name": "Ghana",
+      "tier": 3
+    },
+    "GM": {
+      "name": "Gambia",
+      "tier": 3
+    },
+    "GN": {
+      "name": "Guinea",
+      "tier": 3
+    },
+    "GQ": {
+      "name": "Equatorial Guinea",
+      "tier": 3
+    },
+    "GR": {
+      "name": "Greece",
+      "tier": 2
+    },
+    "GT": {
+      "name": "Guatemala",
+      "tier": 3
+    },
+    "GW": {
+      "name": "Guinea-Bissau",
+      "tier": 3
+    },
+    "GY": {
+      "name": "Guyana",
+      "tier": 3
+    },
+    "HK": {
+      "name": "Hong Kong",
+      "tier": 1
+    },
+    "HN": {
+      "name": "Honduras",
+      "tier": 3
+    },
+    "HR": {
+      "name": "Croatia",
+      "tier": 2
+    },
+    "HT": {
+      "name": "Haiti",
+      "tier": 3
+    },
+    "HU": {
+      "name": "Hungary",
+      "tier": 2
+    },
+    "ID": {
+      "name": "Indonesia",
+      "tier": 3
+    },
+    "IE": {
+      "name": "Ireland",
+      "tier": 1
+    },
+    "IL": {
+      "name": "Israel",
+      "tier": 1
+    },
+    "IN": {
+      "name": "India",
+      "tier": 3
+    },
+    "IQ": {
+      "name": "Iraq",
+      "tier": 3
+    },
+    "IR": {
+      "name": "Iran",
+      "tier": 3
+    },
+    "IS": {
+      "name": "Iceland",
+      "tier": 1
+    },
+    "IT": {
+      "name": "Italy",
+      "tier": 1
+    },
+    "JM": {
+      "name": "Jamaica",
+      "tier": 2
+    },
+    "JO": {
+      "name": "Jordan",
+      "tier": 3
+    },
+    "JP": {
+      "name": "Japan",
+      "tier": 1
+    },
+    "KE": {
+      "name": "Kenya",
+      "tier": 3
+    },
+    "KG": {
+      "name": "Kyrgyzstan",
+      "tier": 3
+    },
+    "KH": {
+      "name": "Cambodia",
+      "tier": 3
+    },
+    "KI": {
+      "name": "Kiribati",
+      "tier": 3
+    },
+    "KM": {
+      "name": "Comoros",
+      "tier": 3
+    },
+    "KN": {
+      "name": "Saint Kitts and Nevis",
+      "tier": 3
+    },
+    "KP": {
+      "name": "North Korea",
+      "tier": 3
+    },
+    "KR": {
+      "name": "South Korea",
+      "tier": 1
+    },
+    "KW": {
+      "name": "Kuwait",
+      "tier": 2
+    },
+    "KZ": {
+      "name": "Kazakhstan",
+      "tier": 2
+    },
+    "LA": {
+      "name": "Laos",
+      "tier": 3
+    },
+    "LB": {
+      "name": "Lebanon",
+      "tier": 3
+    },
+    "LC": {
+      "name": "Saint Lucia",
+      "tier": 3
+    },
+    "LI": {
+      "name": "Liechtenstein",
+      "tier": 1
+    },
+    "LK": {
+      "name": "Sri Lanka",
+      "tier": 3
+    },
+    "LR": {
+      "name": "Liberia",
+      "tier": 3
+    },
+    "LS": {
+      "name": "Lesotho",
+      "tier": 3
+    },
+    "LT": {
+      "name": "Lithuania",
+      "tier": 1
+    },
+    "LU": {
+      "name": "Luxembourg",
+      "tier": 1
+    },
+    "LV": {
+      "name": "Latvia",
+      "tier": 1
+    },
+    "LY": {
+      "name": "Libya",
+      "tier": 3
+    },
+    "MA": {
+      "name": "Morocco",
+      "tier": 3
+    },
+    "MC": {
+      "name": "Monaco",
+      "tier": 1
+    },
+    "MD": {
+      "name": "Moldova",
+      "tier": 2
+    },
+    "ME": {
+      "name": "Montenegro",
+      "tier": 2
+    },
+    "MG": {
+      "name": "Madagascar",
+      "tier": 3
+    },
+    "MH": {
+      "name": "Marshall Islands",
+      "tier": 3
+    },
+    "MK": {
+      "name": "North Macedonia",
+      "tier": 2
+    },
+    "ML": {
+      "name": "Mali",
+      "tier": 3
+    },
+    "MM": {
+      "name": "Myanmar",
+      "tier": 3
+    },
+    "MN": {
+      "name": "Mongolia",
+      "tier": 3
+    },
+    "MO": {
+      "name": "Macao",
+      "tier": 1
+    },
+    "MR": {
+      "name": "Mauritania",
+      "tier": 3
+    },
+    "MT": {
+      "name": "Malta",
+      "tier": 1
+    },
+    "MU": {
+      "name": "Mauritius",
+      "tier": 2
+    },
+    "MV": {
+      "name": "Maldives",
+      "tier": 3
+    },
+    "MW": {
+      "name": "Malawi",
+      "tier": 3
+    },
+    "MX": {
+      "name": "Mexico",
+      "tier": 2
+    },
+    "MY": {
+      "name": "Malaysia",
+      "tier": 2
+    },
+    "MZ": {
+      "name": "Mozambique",
+      "tier": 3
+    },
+    "NA": {
+      "name": "Namibia",
+      "tier": 2
+    },
+    "NE": {
+      "name": "Niger",
+      "tier": 3
+    },
+    "NG": {
+      "name": "Nigeria",
+      "tier": 3
+    },
+    "NI": {
+      "name": "Nicaragua",
+      "tier": 3
+    },
+    "NL": {
+      "name": "Netherlands",
+      "tier": 1
+    },
+    "NO": {
+      "name": "Norway",
+      "tier": 1
+    },
+    "NP": {
+      "name": "Nepal",
+      "tier": 3
+    },
+    "NR": {
+      "name": "Nauru",
+      "tier": 3
+    },
+    "NZ": {
+      "name": "New Zealand",
+      "tier": 1
+    },
+    "OM": {
+      "name": "Oman",
+      "tier": 1
+    },
+    "PA": {
+      "name": "Panama",
+      "tier": 2
+    },
+    "PE": {
+      "name": "Peru",
+      "tier": 3
+    },
+    "PG": {
+      "name": "Papua New Guinea",
+      "tier": 3
+    },
+    "PH": {
+      "name": "Philippines",
+      "tier": 3
+    },
+    "PK": {
+      "name": "Pakistan",
+      "tier": 3
+    },
+    "PL": {
+      "name": "Poland",
+      "tier": 2
+    },
+    "PS": {
+      "name": "Palestine",
+      "tier": 3
+    },
+    "PT": {
+      "name": "Portugal",
+      "tier": 2
+    },
+    "PW": {
+      "name": "Palau",
+      "tier": 2
+    },
+    "PY": {
+      "name": "Paraguay",
+      "tier": 2
+    },
+    "QA": {
+      "name": "Qatar",
+      "tier": 1
+    },
+    "RO": {
+      "name": "Romania",
+      "tier": 2
+    },
+    "RS": {
+      "name": "Serbia",
+      "tier": 2
+    },
+    "RU": {
+      "name": "Russia",
+      "tier": 2
+    },
+    "RW": {
+      "name": "Rwanda",
+      "tier": 3
+    },
+    "SA": {
+      "name": "Saudi Arabia",
+      "tier": 2
+    },
+    "SB": {
+      "name": "Solomon Islands",
+      "tier": 3
+    },
+    "SC": {
+      "name": "Seychelles",
+      "tier": 2
+    },
+    "SD": {
+      "name": "Sudan",
+      "tier": 3
+    },
+    "SE": {
+      "name": "Sweden",
+      "tier": 1
+    },
+    "SG": {
+      "name": "Singapore",
+      "tier": 1
+    },
+    "SI": {
+      "name": "Slovenia",
+      "tier": 1
+    },
+    "SK": {
+      "name": "Slovakia",
+      "tier": 1
+    },
+    "SL": {
+      "name": "Sierra Leone",
+      "tier": 3
+    },
+    "SM": {
+      "name": "San Marino",
+      "tier": 1
+    },
+    "SN": {
+      "name": "Senegal",
+      "tier": 3
+    },
+    "SO": {
+      "name": "Somalia",
+      "tier": 3
+    },
+    "SR": {
+      "name": "Suriname",
+      "tier": 3
+    },
+    "SS": {
+      "name": "South Sudan",
+      "tier": 3
+    },
+    "ST": {
+      "name": "Sao Tome and Principe",
+      "tier": 3
+    },
+    "SV": {
+      "name": "El Salvador",
+      "tier": 3
+    },
+    "SY": {
+      "name": "Syria",
+      "tier": 3
+    },
+    "SZ": {
+      "name": "Eswatini",
+      "tier": 3
+    },
+    "TD": {
+      "name": "Chad",
+      "tier": 3
+    },
+    "TG": {
+      "name": "Togo",
+      "tier": 3
+    },
+    "TH": {
+      "name": "Thailand",
+      "tier": 2
+    },
+    "TJ": {
+      "name": "Tajikistan",
+      "tier": 3
+    },
+    "TL": {
+      "name": "Timor-Leste",
+      "tier": 3
+    },
+    "TM": {
+      "name": "Turkmenistan",
+      "tier": 3
+    },
+    "TN": {
+      "name": "Tunisia",
+      "tier": 3
+    },
+    "TO": {
+      "name": "Tonga",
+      "tier": 3
+    },
+    "TR": {
+      "name": "Turkey",
+      "tier": 2
+    },
+    "TT": {
+      "name": "Trinidad and Tobago",
+      "tier": 2
+    },
+    "TV": {
+      "name": "Tuvalu",
+      "tier": 3
+    },
+    "TW": {
+      "name": "Taiwan",
+      "tier": 1
+    },
+    "TZ": {
+      "name": "Tanzania",
+      "tier": 3
+    },
+    "UA": {
+      "name": "Ukraine",
+      "tier": 2
+    },
+    "UG": {
+      "name": "Uganda",
+      "tier": 3
+    },
+    "US": {
+      "name": "United States",
+      "tier": 1
+    },
+    "UY": {
+      "name": "Uruguay",
+      "tier": 2
+    },
+    "UZ": {
+      "name": "Uzbekistan",
+      "tier": 3
+    },
+    "VA": {
+      "name": "Vatican City",
+      "tier": 3
+    },
+    "VC": {
+      "name": "Saint Vincent and the Grenadines",
+      "tier": 3
+    },
+    "VE": {
+      "name": "Venezuela",
+      "tier": 3
+    },
+    "VN": {
+      "name": "Vietnam",
+      "tier": 3
+    },
+    "VU": {
+      "name": "Vanuatu",
+      "tier": 3
+    },
+    "WS": {
+      "name": "Samoa",
+      "tier": 3
+    },
+    "XK": {
+      "name": "Kosovo",
+      "tier": 3
+    },
+    "YE": {
+      "name": "Yemen",
+      "tier": 3
+    },
+    "ZA": {
+      "name": "South Africa",
+      "tier": 2
+    },
+    "ZM": {
+      "name": "Zambia",
+      "tier": 3
+    },
+    "ZW": {
+      "name": "Zimbabwe",
+      "tier": 3
+    }
   }
 }

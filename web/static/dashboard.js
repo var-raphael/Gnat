@@ -394,37 +394,10 @@ function gnatDashboard() {
 				chartRegistry.visitors = null;
 			}
 
-			// Swap in a brand-new canvas rather than reusing the existing
-			// element. This matches the pattern from the working HTMX
-			// version of this dashboard, where every chart render got a
-			// fresh canvas with a fresh id — no leftover sizing, context
-			// state, or event bindings carried over from a previous render.
+
 			canvas = freshCanvas(canvas);
 
-			// Give the canvas an explicit starting CSS size (not a pixel
-			// buffer size) so Chart.js has something non-zero to measure on
-			// the very first render, in case the wrapper is still 0x0 for a
-			// frame. This is CSS sizing only (canvas.style.width/height) —
-			// we deliberately do NOT also set canvas.width/height here.
-			//
-			// Root cause of the "font grows every time you revisit this
-			// tab" bug: `responsive: true` below makes Chart.js attach a
-			// ResizeObserver to the canvas's parent. Every time the
-			// Overview tab's x-show flips the container from display:none
-			// back to visible, that observer fires and Chart.js resizes the
-			// canvas's pixel buffer itself, using the page's real
-			// devicePixelRatio. Manually writing canvas.width/height here
-			// too created a second, competing source of truth: our manual
-			// write set a 1:1 buffer-to-CSS ratio, then Chart's own
-			// resize-observer pass ran afterward and re-derived the buffer
-			// size using the *actual* DPR (the `devicePixelRatio: 1` chart
-			// option only affects Chart's internal scaling math, not what
-			// the browser's ResizeObserver reports) — inflating the buffer
-			// relative to the CSS size a little more on every tab
-			// revisit, which is what stretched the fonts upward each time.
-			// Removing the manual canvas.width/height write and letting
-			// Chart.js's own responsive handling be the *only* thing that
-			// sets the pixel buffer eliminates that double-write entirely.
+
 			const wrap = canvas.closest(".chart-wrap") || canvas.parentElement;
 			const w = Math.floor(wrap.clientWidth) || 400;
 			const h = Math.floor(wrap.clientHeight) || 220;
