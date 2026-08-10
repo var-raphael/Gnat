@@ -36,7 +36,6 @@ Gnat is built for one site per instance, matching the single-binary model. Featu
 - **Raw HTTP ingestion, no SDKs needed.** Any backend language can send events with a plain JSON POST.
 - **Funnels, cohorts, retention curves, and auto-discovered path analysis.** The analytical depth that most single-binary tools skip.
 - **Built-in MCP server.** AI agents and assistants can query your analytics directly, no separate export or import step.
-- **Optional AI-generated summaries of your stats**, using your own API key with Anthropic, OpenAI, Mistral, or Ollama.
 - **CSV, JSON, and raw SQL export.** It is your data, in a format you can actually use elsewhere.
 
 ## Quickstart
@@ -111,10 +110,6 @@ Every setting is an environment variable. There is no YAML or JSON config file, 
 | `GNAT_API_KEY` | required | Authorizes writes to `/api/event` |
 | `GNAT_DASHBOARD_PASSWORD` | required | Gates the dashboard and all `/api/stats` and `/api/export` endpoints |
 | `GNAT_SITES` | required | Comma-separated allowlist of origins permitted to send events |
-| `GNAT_RETENTION_RAW_EVENTS_DAYS` | `0`, keep forever | Automatic cleanup of raw event rows |
-| `GNAT_AI_PROVIDER` | none | `anthropic`, `openai`, `mistral`, or `ollama`, for optional AI summaries |
-| `GNAT_AI_MODEL` | none | Model name for the chosen provider |
-| `GNAT_AI_API_KEY` | none | Kept separate from the ingest key and never logged |
 
 `GNAT_API_KEY` protects the ingest endpoint only. `GNAT_DASHBOARD_PASSWORD` protects everything else, including reads. They are deliberately independent so rotating one never affects the other.
 
@@ -126,7 +121,7 @@ Everything runs in one process:
 - Storage via GORM, swappable between SQLite, Postgres, and MySQL through a small dialect layer that isolates the handful of SQL fragments that actually differ per engine
 - Query API that powers both the embedded dashboard and any custom UI you build against it
 - Embedded dashboard, served as static files straight out of the Go binary
-- Background jobs for path precomputation and retention cleanup
+- Background jobs for path precomputation
 - MCP server for AI agent access, authenticated by its own token, independent of dashboard sessions
 
 ## Roadmap
