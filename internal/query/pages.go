@@ -46,8 +46,13 @@ func GetTopPages(db *gorm.DB, from, to time.Time) ([]PagePoint, error) {
 	pathExpr := dialect.JSONExtract(db.Dialector.Name(), "properties", "path")
 
 	var results []PagePoint
+	// COALESCE(..., '') guards against a JSON null path (malformed or
+	// legacy event) scanning as SQL NULL into the non-pointer Path
+	// field, which errors on every driver — see the longer explanation
+	// in GetTopReferrers, which hit this in practice for the referrer
+	// field.
 	err := db.Table("events").
-		Select(pathExpr + " as path, count(*) as count").
+		Select("COALESCE("+pathExpr+", '') as path, count(*) as count").
 		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
 		Group("path").
 		Order("count DESC").

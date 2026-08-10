@@ -52,8 +52,18 @@ func GetTopReferrers(db *gorm.DB, from, to time.Time) ([]ReferrerPoint, error) {
 		Referrer string
 		Count    int64
 	}
+	// COALESCE(..., '') matters here beyond just "tidiness": the
+	// tracker sends JSON null (not "") for direct traffic (see
+	// tracker.js), and json_extract/JSON_EXTRACT both pass a JSON null
+	// straight through as SQL NULL. Scanning SQL NULL into Raw.Referrer
+	// — a plain, non-pointer string — is a hard error in Go's
+	// database/sql on every driver (not a MySQL-specific quirk), which
+	// would fail the whole query before the row.Referrer == "" filter
+	// below ever got a chance to run. Coalescing to '' in SQL sidesteps
+	// that entirely and keeps the existing blank-filtering logic
+	// working as originally intended.
 	err := db.Table("events").
-		Select(referrerExpr + " as referrer, count(*) as count").
+		Select("COALESCE("+referrerExpr+", '') as referrer, count(*) as count").
 		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
 		Group("referrer").
 		Order("count DESC").

@@ -85,8 +85,13 @@ func GetTrafficSources(db *gorm.DB, from, to time.Time) ([]TrafficSourcePoint, e
 		SiteName string
 		Count    int64
 	}
+	// COALESCE(..., '') for the same reason as GetTopReferrers: direct
+	// traffic stores JSON null for referrer, which would otherwise
+	// scan as SQL NULL into the non-pointer Referrer field and error
+	// out — categorize() already expects "" to mean direct, it just
+	// needs the row to actually reach it.
 	err := db.Table("events").
-		Select(referrerExpr+" as referrer, sites.name as site_name, count(*) as count").
+		Select("COALESCE("+referrerExpr+", '')"+" as referrer, sites.name as site_name, count(*) as count").
 		Joins("JOIN sites ON sites.id = events.site_id").
 		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
 		Group("referrer, sites.name").

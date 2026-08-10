@@ -29,19 +29,32 @@ const (
 // bucket rows per day. column should be a bare column name, e.g.
 // "timestamp" — callers are responsible for any table-qualification.
 //
-// SQLite and MySQL are implemented. Postgres panics deliberately rather
-// than silently returning syntax that would fail at query time with a
-// much more confusing error — this is meant to be the very first thing
-// that breaks, loudly, the moment that driver is switched on, so it's
-// obvious what still needs implementing.
+// SQLite, Postgres, and MySQL are all implemented.
 func DateTrunc(driver, column string) string {
 	switch driver {
 	case SQLite:
 		return fmt.Sprintf("strftime('%%Y-%%m-%%d', %s)", column)
 	case Postgres:
-		panic("dialect.DateTrunc: postgres not yet implemented")
+		// to_char(..., 'YYYY-MM-DD') rather than
+		// date_trunc('day', column)::text: date_trunc keeps a full
+		// timestamp (e.g. "2026-08-10 00:00:00"), which is not the
+		// "2006-01-02"-shaped string every caller here scans into a
+		// Go string field and expects to match SQLite's strftime
+		// output above. to_char produces that exact shape directly.
+		return fmt.Sprintf("to_char(%s, 'YYYY-MM-DD')", column)
 	case MySQL:
-		return fmt.Sprintf("DATE(%s)", column)
+		// DATE(column) alone is a DATE-typed result. Every caller of
+		// this function scans results into a Go string field (see
+		// PageviewPoint.Date and countRow.Value), but with
+		// parseTime=True set on the DSN (required elsewhere so direct
+		// datetime columns scan into time.Time), go-sql-driver/mysql
+		// can ONLY scan a DATE/DATETIME result into time.Time — not
+		// string or []byte — and errors out on anything else.
+		// DATE_FORMAT explicitly converts it to a VARCHAR-typed result
+		// at the SQL level first, sidestepping that driver rule
+		// entirely and giving the same "2006-01-02" text SQLite's
+		// strftime already produces above.
+		return fmt.Sprintf("DATE_FORMAT(%s, '%%Y-%%m-%%d')", column)
 	default:
 		panic("dialect.DateTrunc: unknown driver " + driver)
 	}
@@ -54,14 +67,26 @@ func DateTrunc(driver, column string) string {
 // callers needing nested paths will need to extend this signature when
 // that need actually arises.
 //
-// Same deliberate-panic behavior as DateTrunc for the still-unimplemented
-// Postgres driver, and for the same reason.
+// SQLite, Postgres, and MySQL are all implemented.
 func JSONExtract(driver, column, path string) string {
 	switch driver {
 	case SQLite:
 		return fmt.Sprintf("json_extract(%s, '$.%s')", column, path)
 	case Postgres:
-		panic("dialect.JSONExtract: postgres not yet implemented")
+		// properties is stored as plain TEXT (see storage.Event),
+		// not a native json/jsonb column, so it has to be cast
+		// before the -> / ->> operators apply at all. ->> ("get as
+		// text") unwraps quoting itself, no JSON_UNQUOTE-style
+		// second step needed. It also already returns real SQL NULL
+		// for both a missing key and an explicit JSON null value —
+		// Postgres has no equivalent of the MySQL "null" -> string
+		// "null" quirk documented in the MySQL case below, so no
+		// extra JSON_TYPE-style guard is needed here.
+		// The cast is safe against malformed/empty JSON because
+		// every row's properties is written as either real payload
+		// JSON or the literal "{}" default, never "" (see
+		// ingest/handler.go), so ::json never errors on a stored row.
+		return fmt.Sprintf("(%s::json->>'%s')", column, path)
 	case MySQL:
 		// MySQL's JSON_EXTRACT returns the value still JSON-quoted
 		// (e.g. "\"/pricing\"" instead of "/pricing"), so JSON_UNQUOTE
@@ -69,7 +94,22 @@ func JSONExtract(driver, column, path string) string {
 		// value in a GROUP BY or WHERE would carry literal quote
 		// characters and never match/group the way SQLite's
 		// already-unquoted json_extract does.
-		return fmt.Sprintf("JSON_UNQUOTE(JSON_EXTRACT(%s, '$.%s'))", column, path)
+		//
+		// Separately: when the key exists but its value is JSON null
+		// (e.g. {"referrer": null}), JSON_EXTRACT returns the JSON
+		// null literal, not SQL NULL. JSON_UNQUOTE then turns that
+		// into the four-character *string* "null" — not an empty or
+		// NULL value. SQLite's json_extract has no such quirk; it
+		// already returns real SQL NULL for a JSON null value, which
+		// is why this only ever surfaces on MySQL. We check
+		// JSON_TYPE(...) = 'NULL' explicitly and force real SQL NULL
+		// in that case, so downstream COALESCE/blank-filtering logic
+		// (which assumes SQL NULL or '', never the string "null")
+		// keeps working the same across both drivers.
+		return fmt.Sprintf(
+			"IF(JSON_TYPE(JSON_EXTRACT(%[1]s, '$.%[2]s')) = 'NULL', NULL, JSON_UNQUOTE(JSON_EXTRACT(%[1]s, '$.%[2]s')))",
+			column, path,
+		)
 	default:
 		panic("dialect.JSONExtract: unknown driver " + driver)
 	}

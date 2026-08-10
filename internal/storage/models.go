@@ -9,8 +9,14 @@ import (
 // Site represents a single tracked property (one instance can support
 // multiple sites even though v1 only exposes a single-site config path).
 type Site struct {
-	ID        uint   `gorm:"primaryKey"`
-	Name      string `gorm:"uniqueIndex;not null"`
+	ID uint `gorm:"primaryKey"`
+	// size:255 gives GORM's MySQL dialector a bounded VARCHAR instead
+	// of its no-length default of LONGTEXT — MySQL/InnoDB can't put a
+	// unique index on a TEXT/BLOB column without an explicit index
+	// prefix length, so a bare `string` here fails AutoMigrate on
+	// MySQL specifically (SQLite and Postgres both allow indexing an
+	// unbounded text column directly, so this never surfaced there).
+	Name      string `gorm:"uniqueIndex;not null;size:255"`
 	CreatedAt time.Time
 }
 
@@ -30,16 +36,22 @@ type Site struct {
 // User-Agent header at ingestion time. No client-side JS is needed for
 // this, the header is already present on every HTTP request.
 type Event struct {
-	ID          uint      `gorm:"primaryKey"`
-	SiteID      uint      `gorm:"index;not null"`
-	EventName   string    `gorm:"index;not null"`
-	DistinctID  string    `gorm:"index;not null"`
+	ID     uint `gorm:"primaryKey"`
+	SiteID uint `gorm:"index;not null"`
+	// The size tags below are all for the same MySQL indexed-TEXT
+	// reason as Site.Name — GORM's MySQL dialector defaults a bare
+	// `string` to LONGTEXT, which MySQL/InnoDB can't put any index
+	// (unique or not) on without an explicit key-length prefix.
+	// SQLite and Postgres both allow indexing unbounded text directly,
+	// so this only surfaces on MySQL.
+	EventName   string    `gorm:"index;not null;size:255"`
+	DistinctID  string    `gorm:"index;not null;size:255"`
 	Properties  string    `gorm:"type:text"`
-	Country     string    `gorm:"index"`
-	VisitorHash string    `gorm:"index"`
-	Browser     string    `gorm:"index"`
-	OS          string    `gorm:"index"`
-	DeviceType  string    `gorm:"index"` // "desktop", "mobile", "tablet", "bot", "unknown"
+	Country     string    `gorm:"index;size:255"`
+	VisitorHash string    `gorm:"index;size:255"`
+	Browser     string    `gorm:"index;size:255"`
+	OS          string    `gorm:"index;size:255"`
+	DeviceType  string    `gorm:"index;size:255"` // "desktop", "mobile", "tablet", "bot", "unknown"
 	Timestamp   time.Time `gorm:"index;not null"`
 	CreatedAt   time.Time
 }
@@ -47,9 +59,10 @@ type Event struct {
 // PathSummary stores precomputed multi-branch path analysis results,
 // written by a background job rather than computed per-request.
 type PathSummary struct {
-	ID          uint   `gorm:"primaryKey"`
-	SiteID      uint   `gorm:"index;not null"`
-	AnchorEvent string `gorm:"index;not null"`
+	ID     uint `gorm:"primaryKey"`
+	SiteID uint `gorm:"index;not null"`
+	// size:255 for the same MySQL indexed-TEXT reason as Event above.
+	AnchorEvent string `gorm:"index;not null;size:255"`
 	Path        string `gorm:"type:text;not null"`
 	Count       int    `gorm:"not null"`
 	ComputedAt  time.Time
@@ -86,8 +99,12 @@ type Funnel struct {
 // most one row: regenerating replaces it rather than appending, so a
 // compromised token can be fully invalidated by generating a new one.
 type McpToken struct {
-	ID        uint `gorm:"primaryKey"`
-	TokenHash string `gorm:"uniqueIndex;not null"`
+	ID uint `gorm:"primaryKey"`
+	// size:64 for the same MySQL indexed-TEXT reason as Site.Name
+	// above — and a SHA-256 hex digest is always exactly 64 chars
+	// regardless of driver, so this is also just the correct type,
+	// not merely a MySQL workaround.
+	TokenHash string `gorm:"uniqueIndex;not null;size:64"`
 	CreatedAt time.Time
 }
 
