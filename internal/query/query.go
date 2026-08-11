@@ -185,13 +185,20 @@ type countRow struct {
 	Count int64
 }
 
-// groupByCount runs a pageview count grouped by column, then adds a pct
-// of total to each row. Shared by countries/devices/browsers, which are
-// otherwise identical queries against different columns.
+// groupByCount runs a query counting unique visitors (distinct_id) per
+// value of the given column, then adds a pct of total to each row.
+// Shared by countries/devices/browsers, which are otherwise identical
+// queries against different columns.
+//
+// Counts unique visitors rather than raw pageviews — someone who
+// loads five pages in one visit should show up as one visitor under
+// their country/device/browser, not five, or these breakdowns would
+// skew toward whoever browses the most rather than reflecting who's
+// actually visiting.
 func groupByCount(db *gorm.DB, column string, from, to time.Time) ([]countRow, error) {
 	var rows []countRow
 	err := db.Table("events").
-		Select(column + " as value, count(*) as count").
+		Select(column + " as value, count(distinct distinct_id) as count").
 		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
 		Group(column).
 		Order("count DESC").
