@@ -306,7 +306,7 @@
 				<template x-for="row in topReferrers.slice(0, 5)" :key="row.label">
 					<div class="breakdown-row">
 						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
-						<span class="breakdown-row-icon"><i :class="referrerIcon(row)" :style="`color: ${referrerColor(row)}`"></i></span>
+						<span class="breakdown-row-icon" :class="{ 'brand-badge-wrap': referrerIsBadge(row) }"><i :class="[referrerIcon(row), { 'brand-badge': referrerIsBadge(row) }]" :style="referrerIsBadge(row) ? '' : `color: ${referrerColor(row)}`"></i></span>
 						<span class="breakdown-row-label" x-text="row.label"></span>
 						<span class="breakdown-row-count" x-text="row.count"></span>
 					</div>
@@ -735,7 +735,7 @@ and top referrers for the last 7 days."</code></pre>
 							<span class="breakdown-row-icon"><i :class="browserIcon(row.name)" :style="`color: ${browserColor(row.name)}`"></i></span>
 						</template>
 						<template x-if="modalKind === 'referrers'">
-							<span class="breakdown-row-icon"><i :class="referrerIcon(row)" :style="`color: ${referrerColor(row)}`"></i></span>
+							<span class="breakdown-row-icon" :class="{ 'brand-badge-wrap': referrerIsBadge(row) }"><i :class="[referrerIcon(row), { 'brand-badge': referrerIsBadge(row) }]" :style="referrerIsBadge(row) ? '' : `color: ${referrerColor(row)}`"></i></span>
 						</template>
 						<template x-if="modalKind === 'events'">
 							<span class="breakdown-row-icon"><i class="fa-solid fa-diamond" style="color:#f472b6"></i></span>

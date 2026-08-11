@@ -638,6 +638,23 @@ body {
 	overflow: hidden;
 }
 
+/* Solid badge for brand icons whose real logo color (e.g. X's black)
+   doesn't have enough contrast as a plain glyph color against either
+   theme's background — a small filled circle keeps the icon visible
+   regardless of page background, instead of relying on the icon
+   color alone like every other (colorful) brand icon here does. */
+.breakdown-row-icon .brand-badge {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #000;
+	color: #fff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 10px;
+}
+
 .flag-img {
 	width: 18px;
 	height: 13px;

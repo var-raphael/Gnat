@@ -32,17 +32,21 @@ var emailDomains = map[string]bool{
 	"outlook.live.com": true, "mail.yahoo.com": true,
 }
 
-func categorize(referrer, siteName string) string {
-	if referrer == "" || referrer == siteName {
+// categorize buckets a referrer host (already normalized via
+// referrerHost — see GetTrafficSources) against the site's own host.
+// Internal navigation (referrer host == site's own host) counts as
+// direct, same as a blank referrer.
+func categorize(referrerHostVal, siteHost string) string {
+	if referrerHostVal == "" || referrerHostVal == siteHost {
 		return "direct"
 	}
-	if referrer == "google.com" || strings.HasPrefix(referrer, "google.") || strings.Contains(referrer, ".google.") {
+	if referrerHostVal == "google.com" || strings.HasPrefix(referrerHostVal, "google.") || strings.Contains(referrerHostVal, ".google.") {
 		return "google"
 	}
-	if socialDomains[referrer] {
+	if socialDomains[referrerHostVal] {
 		return "social"
 	}
-	if emailDomains[referrer] {
+	if emailDomains[referrerHostVal] {
 		return "email"
 	}
 	return "referral"
@@ -102,7 +106,14 @@ func GetTrafficSources(db *gorm.DB, from, to time.Time) ([]TrafficSourcePoint, e
 
 	buckets := map[string]int64{"direct": 0, "google": 0, "social": 0, "email": 0, "referral": 0}
 	for _, row := range rows {
-		cat := categorize(row.Referrer, row.SiteName)
+		// Normalize the raw referrer URL to a bare host (same helper
+		// GetTopReferrers uses) so it can actually match against
+		// socialDomains/emailDomains and the site's own host — those
+		// were previously compared against full raw URLs, which
+		// could never match, letting internal pages and social/email
+		// referrers alike fall through to "referral".
+		host := referrerHost(row.Referrer)
+		cat := categorize(host, row.SiteName)
 		buckets[cat] += row.Count
 	}
 

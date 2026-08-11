@@ -963,6 +963,7 @@ function gnatDashboard() {
 				Brave: "fa-brands fa-brave",
 				Vivaldi: "fa-solid fa-v",
 				"Samsung Internet": "fa-brands fa-android",
+				Android: "fa-brands fa-android",
 				UC: "fa-solid fa-u",
 				IE: "fa-brands fa-internet-explorer",
 				"Internet Explorer": "fa-brands fa-internet-explorer",
@@ -981,12 +982,16 @@ function gnatDashboard() {
 				Brave: "#fb7185",
 				Vivaldi: "#a78bfa",
 				"Samsung Internet": "#60a5fa",
+				Android: "#a4c639",
 				UC: "#fbbf24",
 				IE: "#38bdf8",
 				"Internet Explorer": "#38bdf8",
-				Other: "#8b9296",
+				// "Other"/unrecognized still gets a plain globe icon, but a
+				// muted teal instead of flat grey so it doesn't read as a
+				// broken or error state next to the branded icons.
+				Other: "#5aa9a3",
 			};
-			return colors[name] || "#8b9296";
+			return colors[name] || "#5aa9a3";
 		},
 
 		// Maps a referrer's known category/domain to a Font Awesome brand
@@ -1003,16 +1008,32 @@ function gnatDashboard() {
 		referrerColor(row) {
 			const domain = (row.referrer || row.label || "").toLowerCase();
 			const hit = this._referrerMatch(domain);
-			return hit ? hit.color : "#8b9296";
+			// Unrecognized referrers still get the plain globe icon, but a
+			// muted teal instead of flat grey so it doesn't read as broken.
+			return hit ? hit.color : "#5aa9a3";
+		},
+
+		// True for brand icons rendered as a solid badge (see
+		// .brand-badge in CSS) rather than a plain colored glyph.
+		referrerIsBadge(row) {
+			const domain = (row.referrer || row.label || "").toLowerCase();
+			const hit = this._referrerMatch(domain);
+			return !!(hit && hit.badge);
 		},
 
 		_referrerMatch(domain) {
 			const socialIcons = [
+				// t.co and x.com are both X (formerly Twitter) — t.co is X's
+				// own link-shortener domain, x.com is the site itself.
+				// badge: true means render a black circular badge behind a
+				// white glyph (see .brand-badge in CSS) instead of a plain
+				// colored icon — X's real black doesn't have contrast as a
+				// plain glyph color against either theme's background.
+				{ match: "t.co", icon: "fa-brands fa-x-twitter", color: "#fff", badge: true },
+				{ match: "x.com", icon: "fa-brands fa-x-twitter", color: "#fff", badge: true },
+				{ match: "twitter", icon: "fa-brands fa-x-twitter", color: "#fff", badge: true },
 				{ match: "facebook", icon: "fa-brands fa-facebook", color: "#1877f2" },
 				{ match: "instagram", icon: "fa-brands fa-instagram", color: "#e1306c" },
-				{ match: "twitter", icon: "fa-brands fa-twitter", color: "#1da1f2" },
-				{ match: "t.co", icon: "fa-brands fa-twitter", color: "#1da1f2" },
-				{ match: "x.com", icon: "fa-brands fa-x-twitter", color: "#e8e8e6" },
 				{ match: "linkedin", icon: "fa-brands fa-linkedin", color: "#0a66c2" },
 				{ match: "youtube", icon: "fa-brands fa-youtube", color: "#ff0000" },
 				{ match: "tiktok", icon: "fa-brands fa-tiktok", color: "#25f4ee" },

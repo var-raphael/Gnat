@@ -3,6 +3,7 @@ package query
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -72,16 +73,34 @@ func GetTopReferrers(db *gorm.DB, from, to time.Time) ([]ReferrerPoint, error) {
 		return nil, err
 	}
 
-	results := make([]ReferrerPoint, 0, len(raw))
+	// Raw referrers are full URLs (document.referrer straight from the
+	// client, e.g. "https://www.facebook.com/"). Normalize each to a
+	// bare host before aggregating — otherwise the same real-world
+	// source shows up as many distinct rows (different paths/schemes
+	// on the same domain), and internal navigation (e.g.
+	// "https://yoursite.com/home") never matches up against anything
+	// to get excluded as direct traffic.
+	counts := make(map[string]int64)
+	order := make([]string, 0, len(raw))
 	for _, row := range raw {
-		if row.Referrer == "" {
+		host := referrerHost(row.Referrer)
+		if host == "" {
 			continue
 		}
+		if _, seen := counts[host]; !seen {
+			order = append(order, host)
+		}
+		counts[host] += row.Count
+	}
+
+	results := make([]ReferrerPoint, 0, len(order))
+	for _, host := range order {
 		results = append(results, ReferrerPoint{
-			Referrer: row.Referrer,
-			Count:    row.Count,
+			Referrer: host,
+			Count:    counts[host],
 			Category: "referral",
 		})
 	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Count > results[j].Count })
 	return results, nil
 }

@@ -22,6 +22,22 @@ func DateTrunc(driver, column string) string {
 }
 
 
+// HourTrunc truncates a timestamp column down to the hour, formatted
+// as "HH:00", for hourly bucketing (used when a query range collapses
+// to a single calendar day and daily buckets would be a single point).
+func HourTrunc(driver, column string) string {
+	switch driver {
+	case SQLite:
+		return fmt.Sprintf("strftime('%%H:00', %s)", column)
+	case Postgres:
+		return fmt.Sprintf("to_char(%s, 'HH24:00')", column)
+	case MySQL:
+		return fmt.Sprintf("DATE_FORMAT(%s, '%%H:00')", column)
+	default:
+		panic("dialect.HourTrunc: unknown driver " + driver)
+	}
+}
+
 func JSONExtract(driver, column, path string) string {
 	switch driver {
 	case SQLite:

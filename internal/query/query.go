@@ -45,10 +45,25 @@ func PageviewsHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// GetPageviewsOverTime returns daily pageview counts between from and
-// to (inclusive), with days that had zero pageviews filled in as 0
-// rather than omitted.
+// GetPageviewsOverTime returns pageview counts between from and to
+// (inclusive), with zero-count buckets filled in rather than omitted.
+//
+// When from and to fall on the same calendar day, a daily bucketing
+// would produce a single point — not a useful graph — so it buckets
+// by hour instead (24 points labeled "00:00".."23:00" for that day).
+// Multi-day ranges keep the normal daily bucketing.
 func GetPageviewsOverTime(db *gorm.DB, from, to time.Time) ([]PageviewPoint, error) {
+	if isSameCalendarDay(from, to) {
+		return getPageviewsByHour(db, from, to)
+	}
+	return getPageviewsByDay(db, from, to)
+}
+
+func isSameCalendarDay(from, to time.Time) bool {
+	return from.Format("2006-01-02") == to.Format("2006-01-02")
+}
+
+func getPageviewsByDay(db *gorm.DB, from, to time.Time) ([]PageviewPoint, error) {
 	var results []PageviewPoint
 
 	// Grouped by calendar day via dialect.DateTrunc, the one seam
@@ -77,6 +92,44 @@ func GetPageviewsOverTime(db *gorm.DB, from, to time.Time) ([]PageviewPoint, err
 	}
 
 	return filled, nil
+}
+
+// getPageviewsByHour buckets a single day's pageviews by hour, e.g.
+// for a "today only" or any single-date from/to selection where a
+// daily bucket would otherwise collapse to one point.
+func getPageviewsByHour(db *gorm.DB, from, to time.Time) ([]PageviewPoint, error) {
+	var results []PageviewPoint
+
+	hourExpr := dialect.HourTrunc(db.Dialector.Name(), "timestamp")
+	err := db.Table("events").
+		Select(hourExpr + " as date, count(*) as count").
+		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
+		Group("date").
+		Order("date").
+		Scan(&results).Error
+	if err != nil {
+		return nil, err
+	}
+
+	byHour := make(map[string]int64, len(results))
+	for _, r := range results {
+		byHour[r.Date] = r.Count
+	}
+
+	filled := make([]PageviewPoint, 0, 24)
+	for h := 0; h < 24; h++ {
+		key := padHour(h) + ":00"
+		filled = append(filled, PageviewPoint{Date: key, Count: byHour[key]})
+	}
+
+	return filled, nil
+}
+
+func padHour(h int) string {
+	if h < 10 {
+		return "0" + itoa(h)
+	}
+	return itoa(h)
 }
 
 // parseRange reads from/to query params, defaulting to the last 7 days
