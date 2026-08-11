@@ -13,14 +13,14 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Driver   string 
-	Path     string 
+	Driver   string // sqlite, postgres, mysql
+	Path     string // used for sqlite
 	Host     string
 	Port     int
 	User     string
 	Password string
 	DBName   string
-	SSLMode  string 
+	SSLMode  string // postgres only, defaults to "disable"
 }
 
 type RetentionConfig struct {
@@ -28,35 +28,56 @@ type RetentionConfig struct {
 }
 
 type AIConfig struct {
-	Provider string
+	Provider string // anthropic, openai, mistral, ollama
 	Model    string
 }
 
-
+// Config holds every setting Gnat needs, sourced entirely from
+// environment variables. There is no config file: secrets and settings
+// living in one place, rather than split across a yaml file and env
+// overrides, is a deliberate security/simplicity choice.
 type Config struct {
 	Server    ServerConfig
 	Database  DatabaseConfig
 	Retention RetentionConfig
 	AI        AIConfig
 
-
+	// APIKey authorizes writes to /api/event only. It is never used to
+	// protect the dashboard or stats endpoints — see DashboardPassword.
 	APIKey string
 
-
+	// DashboardPassword gates the dashboard page and every /api/stats
+	// and /api/export endpoint. Deliberately separate from APIKey so
+	// rotating one never affects the other.
 	DashboardPassword string
 
-
+	// Sites is the operator-controlled allowlist of domains permitted
+	// to send events, e.g. "example.com,app.example.com". Incoming
+	// events are matched against this list via the Origin header; any
+	// origin not on this list is silently dropped at ingest.
 	Sites []string
 
-
+	// aiAPIKey is sourced only from its own env var, deliberately kept
+	// unexported so nothing accidentally logs or serializes it alongside
+	// the rest of Config.
 	aiAPIKey string
 }
 
-
+// Load builds Config entirely from environment variables and validates
+// the result. It does not read any file itself; call godotenv.Load()
+// earlier in main() if you want local .env support, this function only
+// ever looks at the process environment.
 func Load() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
-			BindPort:  envInt("GNAT_BIND_PORT", 8080),
+			// PORT takes priority when present: most PaaS hosts
+			// (Render, Heroku, Railway) inject PORT and require the
+			// app to bind to whatever value they assign, which can
+			// vary per deploy. GNAT_BIND_PORT remains the primary
+			// setting for self-hosted use, where there is no
+			// platform-injected PORT and the operator picks the
+			// port explicitly.
+			BindPort:  envInt("PORT", envInt("GNAT_BIND_PORT", 8080)),
 			PublicURL: envString("GNAT_PUBLIC_URL", "http://localhost:8080"),
 		},
 		Database: DatabaseConfig{
@@ -108,7 +129,9 @@ func envInt(key string, def int) int {
 	return parsed
 }
 
-
+// parseSites splits a comma-separated domain list into a clean slice,
+// trimming whitespace and dropping empty entries (e.g. from trailing
+// commas or accidental double commas).
 func parseSites(raw string) []string {
 	if raw == "" {
 		return nil
@@ -124,7 +147,12 @@ func parseSites(raw string) []string {
 	return sites
 }
 
-
+// validate fails fast on any missing setting that would otherwise leave
+// Gnat running in a silently broken or insecure state: no ingest key
+// means anyone could write events, no dashboard password means anyone
+// could read them, and no sites means every event would be dropped with
+// no way to tell why, same as never registering a property with any
+// other analytics tool.
 func (c *Config) validate() error {
 	if c.APIKey == "" {
 		return fmt.Errorf("GNAT_API_KEY must be set")
@@ -138,6 +166,7 @@ func (c *Config) validate() error {
 
 	switch c.Database.Driver {
 	case "sqlite":
+		// path has a default, nothing further required
 	case "postgres", "mysql":
 		if c.Database.Host == "" || c.Database.User == "" || c.Database.DBName == "" {
 			return fmt.Errorf("%s requires GNAT_DB_HOST, GNAT_DB_USER, and GNAT_DB_NAME", c.Database.Driver)
@@ -149,7 +178,8 @@ func (c *Config) validate() error {
 	return nil
 }
 
-
+// AIAPIKey returns the AI provider API key, sourced only from
+// GNAT_AI_API_KEY.
 func (c *Config) AIAPIKey() string {
 	return c.aiAPIKey
 }
