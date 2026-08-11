@@ -22,12 +22,13 @@ type PropertyBreakdown struct {
 	Breakdown []PropertyValueCount `json:"breakdown"`
 }
 
-// CustomEventPoint is one custom event name's count and property
-// breakdowns for a range.
+// CustomEventPoint is one custom event name's count, country
+// breakdown, and property breakdowns for a range.
 type CustomEventPoint struct {
-	EventName  string              `json:"event_name"`
-	Count      int64               `json:"count"`
-	Properties []PropertyBreakdown `json:"properties"`
+	EventName  string               `json:"event_name"`
+	Count      int64                `json:"count"`
+	Countries  []PropertyValueCount `json:"countries"`
+	Properties []PropertyBreakdown  `json:"properties"`
 }
 
 // CustomEventsHandler returns GET /api/stats/custom-events?from=...&to=...
@@ -65,9 +66,10 @@ func GetCustomEvents(db *gorm.DB, from, to time.Time) ([]CustomEventPoint, error
 	var rows []struct {
 		EventName  string
 		Properties string
+		Country    string
 	}
 	err := db.Table("events").
-		Select("event_name, properties").
+		Select("event_name, properties, country").
 		Where("event_name NOT IN (?, ?) AND timestamp BETWEEN ? AND ?", "pageview", "heartbeat", from, to).
 		Scan(&rows).Error
 	if err != nil {
@@ -79,9 +81,11 @@ func GetCustomEvents(db *gorm.DB, from, to time.Time) ([]CustomEventPoint, error
 		order  []string
 	}
 	type eventAgg struct {
-		count int64
-		props map[string]*propAgg
-		order []string
+		count         int64
+		props         map[string]*propAgg
+		order         []string
+		countryCounts map[string]int64
+		countryOrder  []string
 	}
 	events := make(map[string]*eventAgg)
 	eventOrder := make([]string, 0)
@@ -89,11 +93,18 @@ func GetCustomEvents(db *gorm.DB, from, to time.Time) ([]CustomEventPoint, error
 	for _, row := range rows {
 		ev, ok := events[row.EventName]
 		if !ok {
-			ev = &eventAgg{props: make(map[string]*propAgg)}
+			ev = &eventAgg{props: make(map[string]*propAgg), countryCounts: make(map[string]int64)}
 			events[row.EventName] = ev
 			eventOrder = append(eventOrder, row.EventName)
 		}
 		ev.count++
+
+		if row.Country != "" {
+			if _, seen := ev.countryCounts[row.Country]; !seen {
+				ev.countryOrder = append(ev.countryOrder, row.Country)
+			}
+			ev.countryCounts[row.Country]++
+		}
 
 		var props map[string]interface{}
 		if err := json.Unmarshal([]byte(row.Properties), &props); err != nil {
@@ -130,7 +141,14 @@ func GetCustomEvents(db *gorm.DB, from, to time.Time) ([]CustomEventPoint, error
 			sort.Slice(breakdown, func(i, j int) bool { return breakdown[i].Count > breakdown[j].Count })
 			properties = append(properties, PropertyBreakdown{Name: key, Breakdown: breakdown})
 		}
-		results = append(results, CustomEventPoint{EventName: name, Count: ev.count, Properties: properties})
+
+		countries := make([]PropertyValueCount, 0, len(ev.countryOrder))
+		for _, code := range ev.countryOrder {
+			countries = append(countries, PropertyValueCount{Value: code, Count: ev.countryCounts[code]})
+		}
+		sort.Slice(countries, func(i, j int) bool { return countries[i].Count > countries[j].Count })
+
+		results = append(results, CustomEventPoint{EventName: name, Count: ev.count, Countries: countries, Properties: properties})
 	}
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Count > results[j].Count })

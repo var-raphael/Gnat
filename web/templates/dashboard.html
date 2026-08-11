@@ -857,6 +857,23 @@ and top referrers for the last 7 days."</code></pre>
 					<span x-text="eventDetail?.count"></span> total fires in the selected range
 				</p>
 
+				<template x-if="eventDetail?.countries && eventDetail.countries.length > 0">
+					<div class="event-detail-property">
+						<h3 class="event-detail-property-name">Country</h3>
+						<template x-for="item in propertyBreakdownRows({ breakdown: eventDetail.countries })" :key="item.value">
+							<div class="breakdown-row">
+								<div class="breakdown-row-bar" :style="`width: ${item.pct}%`"></div>
+								<span class="breakdown-row-icon flag-icon">
+									<img :src="countryFlagUrl(item.value)" :alt="item.name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
+									<span class="flag-emoji-fallback" x-text="countryFlagEmoji(item.value)" style="display:none;"></span>
+								</span>
+								<span class="breakdown-row-label" x-text="item.name || 'Unknown'"></span>
+								<span class="breakdown-row-count" x-text="item.count"></span>
+							</div>
+						</template>
+					</div>
+				</template>
+
 				<template x-if="!eventDetail?.properties || eventDetail.properties.length === 0">
 					<p class="gnat-empty">No property data recorded for this event</p>
 				</template>

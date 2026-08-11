@@ -564,7 +564,13 @@ function gnatDashboard() {
 
 		loadCustomEvents(events) {
 			if (!events) return;
-			this.customEvents = this.toBreakdownRows(events, "event_name", "count");
+			this.customEvents = this.toBreakdownRows(events, "event_name", "count").map((row) => ({
+				...row,
+				countries: (row.countries || []).map((c) => {
+					const info = this.countryInfo[c.value];
+					return { ...c, name: (info && info.name) || c.value };
+				}),
+			}));
 		},
 
 		// On a full loadAll() (initial load, login, range change), the
