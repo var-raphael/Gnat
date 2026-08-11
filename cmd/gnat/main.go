@@ -14,6 +14,7 @@ import (
 	gnatmcp "github.com/var-raphael/gnat/internal/mcp"
 	"github.com/var-raphael/gnat/internal/query"
 	"github.com/var-raphael/gnat/internal/storage"
+	"github.com/var-raphael/gnat/web"
 )
 
 func main() {
@@ -55,14 +56,11 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-
 	mux.HandleFunc("/api/event", ingest.Handler(db, cfg.APIKey, geoClient))
-
 
 	mux.HandleFunc("/api/dashboard/login", dashAuth.LoginHandler())
 	mux.HandleFunc("/api/dashboard/logout", dashAuth.LogoutHandler())
 	mux.HandleFunc("/api/dashboard/session", dashAuth.SessionHandler())
-
 
 	mux.HandleFunc("/api/stats/pageviews", dashAuth.RequireSession(query.PageviewsHandler(db)))
 	mux.HandleFunc("/api/stats/events", dashAuth.RequireSession(query.EventsHandler(db)))
@@ -84,7 +82,6 @@ func main() {
 	mux.HandleFunc("/api/funnels", dashAuth.RequireSession(query.FunnelDefsHandler(db)))
 	mux.HandleFunc("/api/funnels/{id}", dashAuth.RequireSession(query.FunnelDefHandler(db)))
 
-
 	mux.HandleFunc("/api/dashboard/mcp-token", dashAuth.RequireSession(auth.McpTokenStatusHandler(mcpTokenStore)))
 	mux.HandleFunc("/api/dashboard/mcp-token/generate", dashAuth.RequireSession(auth.McpTokenGenerateHandler(mcpTokenStore)))
 
@@ -94,36 +91,53 @@ func main() {
 	mux.Handle("/mcp/sse", mcpHandler)
 	mux.Handle("/mcp/{token}/sse", mcpHandler)
 
+	// Dashboard assets are compiled into the binary via web.Files
+	// (see web/embed.go), not read from disk, so the release archive
+	// needs nothing beyond the gnat binary itself to serve any of
+	// these routes correctly, regardless of the working directory
+	// the binary is launched from.
 	mux.HandleFunc("/tracker.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
-		http.ServeFile(w, r, "web/static/tracker.js")
+		serveEmbedded(w, r, "static/tracker.js")
 	})
 
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		http.ServeFile(w, r, "web/templates/dashboard.html")
+		serveEmbedded(w, r, "templates/dashboard.html")
 	})
 	mux.HandleFunc("/dashboard.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
-		http.ServeFile(w, r, "web/static/dashboard.css")
+		serveEmbedded(w, r, "static/dashboard.css")
 	})
 	mux.HandleFunc("/dashboard.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
-		http.ServeFile(w, r, "web/static/dashboard.js")
+		serveEmbedded(w, r, "static/dashboard.js")
 	})
 
 	mux.HandleFunc("/country-tiers.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		http.ServeFile(w, r, "web/static/country-tiers.json")
+		serveEmbedded(w, r, "static/country-tiers.json")
 	})
 
 	mux.HandleFunc("/alpine.min.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
-		http.ServeFile(w, r, "web/static/alpine.min.js")
+		serveEmbedded(w, r, "static/alpine.min.js")
 	})
 
 	addr := ":" + strconv.Itoa(cfg.Server.BindPort)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+// serveEmbedded writes a file from the embedded web.Files filesystem
+// (see web/embed.go) to the response. path is relative to web/, e.g.
+// "static/dashboard.css" or "templates/dashboard.html".
+func serveEmbedded(w http.ResponseWriter, r *http.Request, path string) {
+	data, err := web.Files.ReadFile(path)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Write(data)
 }
