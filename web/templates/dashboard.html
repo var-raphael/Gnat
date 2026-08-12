@@ -1024,7 +1024,7 @@ and top referrers for the last 7 days."</code></pre>
 												<template x-for="(visit, vIdx) in page.visits" :key="page.path + '-' + vIdx">
 													<div class="page-visit-row">
 														<span class="page-visit-time" x-text="visit.timestamp"></span>
-														<span class="page-visit-duration" x-text="Math.round(visit.timespent_seconds) + 's'"></span>
+														<span class="page-visit-duration" x-text="formatShortDuration(visit.timespent_seconds)"></span>
 													</div>
 												</template>
 											</template>

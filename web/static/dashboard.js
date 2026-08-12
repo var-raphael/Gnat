@@ -356,6 +356,19 @@ function gnatDashboard() {
 			return `${m}m ${s}s`;
 		},
 
+		// Formats a short per-visit duration in whole seconds. A real,
+		// nonzero engagement under half a second (e.g. 0.4s) would round
+		// down to "0s" with plain Math.round, which reads as "spent no
+		// time here" even though the visit genuinely happened — shown as
+		// "~1s" instead so a real but brief visit isn't indistinguishable
+		// from no engagement at all.
+		formatShortDuration(seconds) {
+			if (seconds === undefined || seconds === null || isNaN(seconds)) return "0s";
+			const rounded = Math.round(seconds);
+			if (rounded === 0 && seconds > 0) return "~1s";
+			return `${rounded}s`;
+		},
+
 		formatDelta(pct) {
 			if (pct === undefined || pct === null) return null;
 			const sign = pct > 0 ? "+" : "";
