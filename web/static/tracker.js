@@ -146,7 +146,14 @@
 
 	function trackPageviewEnd() {
 		updateActiveTime();
-		var seconds = Math.round(activeTime / 1000);
+		// Round to 1 decimal place, not to the nearest whole second.
+		// Whole-second rounding here would turn any visit under 0.5s
+		// into a flat 0 before it ever reaches the server — making a
+		// real, brief visit indistinguishable from someone who never
+		// engaged with the page at all. One decimal place is enough
+		// precision for the dashboard to tell those apart while still
+		// keeping the payload small.
+		var seconds = Math.round((activeTime / 1000) * 10) / 10;
 		send("pageview_end", {
 			path: currentPath,
 			timespent: seconds
