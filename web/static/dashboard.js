@@ -356,17 +356,16 @@ function gnatDashboard() {
 			return `${m}m ${s}s`;
 		},
 
-		// Formats a short per-visit duration in whole seconds. A real,
-		// nonzero engagement under half a second (e.g. 0.4s) would round
-		// down to "0s" with plain Math.round, which reads as "spent no
-		// time here" even though the visit genuinely happened — shown as
-		// "~1s" instead so a real but brief visit isn't indistinguishable
-		// from no engagement at all.
+		// Formats a per-visit duration in whole seconds. The backend
+		// sends 0 specifically to mean "we know this visit happened but
+		// don't have more than a floor estimate for how long" (see
+		// CountryPageVisit's doc comment on the Go side) — shown as
+		// "~1s" rather than "0s" so a confirmed-but-unmeasured visit
+		// isn't indistinguishable from "no visit happened."
 		formatShortDuration(seconds) {
-			if (seconds === undefined || seconds === null || isNaN(seconds)) return "0s";
+			if (seconds === undefined || seconds === null || isNaN(seconds)) return "~1s";
 			const rounded = Math.round(seconds);
-			if (rounded === 0 && seconds > 0) return "~1s";
-			return `${rounded}s`;
+			return rounded <= 0 ? "~1s" : `${rounded}s`;
 		},
 
 		formatDelta(pct) {

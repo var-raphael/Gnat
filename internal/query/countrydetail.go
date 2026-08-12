@@ -29,7 +29,11 @@ type CountryDimensionPoint struct {
 
 // CountryPageVisit is one specific visitor's actual time spent on a
 // page — the real, individual duration from that one pageview_end
-// event, not blended into an average with anyone else's visit.
+// event, or a ~1s floor when we know the visit happened (the
+// pageview itself is proof) but don't have a clean duration for it —
+// see countryPageBreakdown's doc comment for the two cases this
+// covers. TimespentSecs is 0 in exactly those un-measured cases; the
+// frontend renders 0 as "~1s" rather than "0s" for that reason.
 type CountryPageVisit struct {
 	DistinctID    string  `json:"distinct_id"`
 	Timestamp     string  `json:"timestamp"`
@@ -207,36 +211,47 @@ func countryDimensionBreakdown(db *gorm.DB, from, to time.Time, country, column 
 // list of individual visits and their real engaged time, scoped to
 // one country.
 //
-// View counts come from pageview events. Per-visit time comes from a
-// separate event, pageview_end, which the tracker fires on navigation
-// or tab close with a `timespent` property — actual measured engaged
-// time (mouse/scroll/keypress activity, excluding idle time and
-// background tabs), not a gap-between-events estimate. Each visit is
-// listed individually rather than blended into a page-wide average —
-// one visitor spending 90s and another spending 10s on the same page
-// is two different, real numbers, not one number that represents
-// neither of them. This is the only place in the codebase that reads
-// pageview_end/timespent; every other "time on page" figure elsewhere
-// (see avgTimeOnPage in statssummary.go) still uses the older
-// gap-based estimate, which remains unchanged.
+// Each pageview is matched to its corresponding pageview_end (fired
+// by the tracker on navigation or tab close, carrying a `timespent`
+// property — actual measured engaged time, not a gap-between-events
+// estimate) by distinct_id + path, in chronological order. A visit is
+// shown with a real duration whenever we have proof it happened (the
+// pageview itself, which is unconditional) and treated as ~1s in two
+// cases that both mean the same practical thing — "they were there,
+// we just don't have a clean duration":
+//   - the matched pageview_end reports timespent = 0 (visits under
+//     ~0.5s round down to a flat 0 client-side)
+//   - there's no matching pageview_end at all — the page was still
+//     open when the range ended, or the leave beacon never arrived
+//
+// Leaving the second case as "no data" instead would make two
+// practically-identical outcomes (both "brief or unclear") render
+// completely differently for no reason a person looking at the list
+// could infer. Each visit is listed individually, never blended into
+// a page-wide average — one visitor spending 90s and another 10s on
+// the same page is two different, real numbers. This is the only
+// place in the codebase that reads pageview_end/timespent; every
+// other "time on page" figure elsewhere (see avgTimeOnPage in
+// statssummary.go) still uses the older gap-based estimate.
 func countryPageBreakdown(db *gorm.DB, from, to time.Time, country string) ([]CountryPagePoint, error) {
 	pathExpr := dialect.JSONExtract(db.Dialector.Name(), "properties", "path")
 
-	var viewRows []struct {
-		Path  string
-		Views int64
+	var pageviewRows []struct {
+		Path       string
+		DistinctID string
+		Timestamp  time.Time
 	}
 	err := db.Table("events").
-		Select("COALESCE("+pathExpr+", '') as path, count(*) as views").
+		Select("COALESCE("+pathExpr+", '') as path, distinct_id, timestamp").
 		Where("event_name = ? AND country = ? AND timestamp BETWEEN ? AND ?", "pageview", country, from, to).
-		Group("path").
-		Scan(&viewRows).Error
+		Order("timestamp").
+		Scan(&pageviewRows).Error
 	if err != nil {
 		return nil, err
 	}
 
 	timeExpr := dialect.JSONExtract(db.Dialector.Name(), "properties", "timespent")
-	var visitRows []struct {
+	var endRows []struct {
 		Path       string
 		DistinctID string
 		Timestamp  time.Time
@@ -246,38 +261,66 @@ func countryPageBreakdown(db *gorm.DB, from, to time.Time, country string) ([]Co
 		Select("COALESCE("+pathExpr+", '') as path, distinct_id, timestamp, "+timeExpr+" as timespent").
 		Where("event_name = ? AND country = ? AND timestamp BETWEEN ? AND ?", "pageview_end", country, from, to).
 		Order("timestamp").
-		Scan(&visitRows).Error
+		Scan(&endRows).Error
 	if err != nil {
 		return nil, err
 	}
 
+	// Queue up pageview_end rows per (distinct_id, path), in
+	// chronological order, so each pageview claims the next
+	// following pageview_end for that same visitor+path — handles a
+	// visitor revisiting the same page more than once in range.
+	endQueue := make(map[string][]struct {
+		Timestamp time.Time
+		Timespent *float64
+	})
+	for _, r := range endRows {
+		key := r.DistinctID + "|" + r.Path
+		endQueue[key] = append(endQueue[key], struct {
+			Timestamp time.Time
+			Timespent *float64
+		}{r.Timestamp, r.Timespent})
+	}
+
+	views := make(map[string]int64)
 	visitsByPath := make(map[string][]CountryPageVisit)
-	for _, r := range visitRows {
-		if r.Path == "" || r.Timespent == nil {
+
+	for _, pv := range pageviewRows {
+		if pv.Path == "" {
 			continue
 		}
-		visitsByPath[r.Path] = append(visitsByPath[r.Path], CountryPageVisit{
-			DistinctID: r.DistinctID,
-			// Second precision, not minute — this list is specifically
-			// meant to show distinct individual visits, and the tracker
-			// can legitimately fire more than one pageview_end for the
-			// same page within the same minute (rapid route changes,
-			// visibility toggles). Minute precision would make two real,
-			// different visits display identically.
-			Timestamp:     r.Timestamp.Format("2006-01-02 15:04:05"),
-			TimespentSecs: *r.Timespent,
+		views[pv.Path]++
+
+		key := pv.DistinctID + "|" + pv.Path
+		var seconds float64
+		var displayTs time.Time = pv.Timestamp
+
+		if queue := endQueue[key]; len(queue) > 0 {
+			match := queue[0]
+			endQueue[key] = queue[1:]
+			displayTs = match.Timestamp
+			if match.Timespent != nil {
+				seconds = *match.Timespent
+			}
+		}
+		// seconds stays 0 both when timespent was truly 0 and when
+		// there was no matching pageview_end at all — both cases get
+		// the same ~1s floor at render time (see CountryPageVisit's
+		// doc comment).
+
+		visitsByPath[pv.Path] = append(visitsByPath[pv.Path], CountryPageVisit{
+			DistinctID:    pv.DistinctID,
+			Timestamp:     displayTs.Format("2006-01-02 15:04:05"),
+			TimespentSecs: seconds,
 		})
 	}
 
-	pages := make([]CountryPagePoint, 0, len(viewRows))
-	for _, row := range viewRows {
-		if row.Path == "" {
-			continue
-		}
+	pages := make([]CountryPagePoint, 0, len(views))
+	for path, count := range views {
 		pages = append(pages, CountryPagePoint{
-			Path:   row.Path,
-			Views:  row.Views,
-			Visits: visitsByPath[row.Path],
+			Path:   path,
+			Views:  count,
+			Visits: visitsByPath[path],
 		})
 	}
 
