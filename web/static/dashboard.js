@@ -56,6 +56,7 @@ function gnatDashboard() {
 		countryInfo: {}, // code -> {name, tier}, loaded from /country-tiers.json
 		devices: [],
 		browsers: [],
+		os: [],
 		customEvents: [],
 
 		// live visitors
@@ -88,6 +89,11 @@ function gnatDashboard() {
 		// event property drill-down modal
 		eventDetailOpen: false,
 		eventDetail: null, // the customEvents row (with .properties) currently shown
+
+		countryDetailOpen: false,
+		countryDetailLoading: false,
+		countryDetail: null, // CountryDetail payload from /api/stats/country-detail, or null while loading/closed
+		expandedCountryPage: null, // path of the page whose time-on-page detail is expanded, or null
 
 		// export
 		exportFormat: "csv", // "csv" | "json" | "jsonl"
@@ -286,6 +292,9 @@ function gnatDashboard() {
 			this.fetchJSON(`/api/stats/browsers?${this.dateRangeParams()}`).then((rows) => {
 				this.loadBrowsers(rows);
 			});
+			this.fetchJSON(`/api/stats/os?${this.dateRangeParams()}`).then((rows) => {
+				this.loadOS(rows);
+			});
 			this.fetchJSON(`/api/stats/pages?${this.dateRangeParams()}`).then((rows) => {
 				this.loadTopPages(rows);
 			});
@@ -445,7 +454,14 @@ function gnatDashboard() {
 					// factor a little further, which is what made chart
 					// text look larger every time you returned to Overview.
 					devicePixelRatio: 1,
-					plugins: { legend: { display: false } },
+					plugins: {
+						legend: { display: false },
+						tooltip: {
+							callbacks: {
+								label: (ctx) => `${ctx.parsed.y} unique visitor${ctx.parsed.y === 1 ? "" : "s"}`,
+							},
+						},
+					},
 					scales: {
 						x: {
 							grid: { display: false },
@@ -560,6 +576,42 @@ function gnatDashboard() {
 		loadBrowsers(browsers) {
 			if (!browsers) return;
 			this.browsers = browsers;
+		},
+
+		// OS names from the UA parser include the version (e.g. "Windows
+		// 10", "Mac OS X 10.15.7", "Android 13", "iOS 16.1"), not a clean
+		// short label, so this matches by substring rather than exact key
+		// — same approach as _referrerMatch.
+		_osMatch(name) {
+			const osIcons = [
+				{ match: "windows", icon: "fa-brands fa-windows", color: "#00a4ef" },
+				{ match: "mac os", icon: "fa-brands fa-apple", color: "#a2aaad" },
+				{ match: "macos", icon: "fa-brands fa-apple", color: "#a2aaad" },
+				{ match: "ios", icon: "fa-brands fa-apple", color: "#a2aaad" },
+				{ match: "android", icon: "fa-brands fa-android", color: "#a4c639" },
+				{ match: "linux", icon: "fa-brands fa-linux", color: "#fbbf24" },
+				{ match: "ubuntu", icon: "fa-brands fa-ubuntu", color: "#e95420" },
+				{ match: "chrome os", icon: "fa-brands fa-chrome", color: "#4ade80" },
+			];
+			return osIcons.find((o) => name.toLowerCase().includes(o.match));
+		},
+
+		osIcon(name) {
+			const hit = this._osMatch(name || "");
+			return hit ? hit.icon : "fa-solid fa-desktop";
+		},
+
+		osColor(name) {
+			const hit = this._osMatch(name || "");
+			// Unrecognized OS still gets a plain icon, but a muted teal
+			// instead of flat grey — same reasoning as referrerColor's
+			// fallback.
+			return hit ? hit.color : "#5aa9a3";
+		},
+
+		loadOS(os) {
+			if (!os) return;
+			this.os = os;
 		},
 
 		loadCustomEvents(events) {
@@ -886,7 +938,13 @@ function gnatDashboard() {
 						legend: { display: false },
 						tooltip: {
 							callbacks: {
-								label: (ctx) => `${ctx.parsed.y}% retained`,
+								label: (ctx) => {
+									const p = points[ctx.dataIndex];
+									if (p && typeof p.active === "number" && typeof p.cohort_size === "number") {
+										return `${ctx.parsed.y}% retained (${p.active} of ${p.cohort_size} visitors)`;
+									}
+									return `${ctx.parsed.y}% retained`;
+								},
 							},
 						},
 					},
@@ -956,6 +1014,7 @@ function gnatDashboard() {
 		browserIcon(name) {
 			const icons = {
 				Chrome: "fa-brands fa-chrome",
+				"Chrome (WebView)": "fa-brands fa-chrome",
 				Safari: "fa-brands fa-safari",
 				Firefox: "fa-brands fa-firefox-browser",
 				Edge: "fa-brands fa-edge",
@@ -964,6 +1023,7 @@ function gnatDashboard() {
 				Vivaldi: "fa-solid fa-v",
 				"Samsung Internet": "fa-brands fa-android",
 				Android: "fa-brands fa-android",
+				"Android WebView": "fa-brands fa-android",
 				UC: "fa-solid fa-u",
 				IE: "fa-brands fa-internet-explorer",
 				"Internet Explorer": "fa-brands fa-internet-explorer",
@@ -975,6 +1035,7 @@ function gnatDashboard() {
 		browserColor(name) {
 			const colors = {
 				Chrome: "#4ade80",
+				"Chrome (WebView)": "#4ade80",
 				Safari: "#60a5fa",
 				Firefox: "#fb923c",
 				Edge: "#22d3ee",
@@ -983,6 +1044,7 @@ function gnatDashboard() {
 				Vivaldi: "#a78bfa",
 				"Samsung Internet": "#60a5fa",
 				Android: "#a4c639",
+				"Android WebView": "#a4c639",
 				UC: "#fbbf24",
 				IE: "#38bdf8",
 				"Internet Explorer": "#38bdf8",
@@ -1129,6 +1191,7 @@ function gnatDashboard() {
 				countries: this.countries || [],
 				devices: this.devices || [],
 				browsers: this.browsers || [],
+				os: this.os || [],
 				// properties omitted here (nested array of objects can't
 				// live in a flat CSV cell) — see custom_event_properties
 				// below, joined back to this section by event_name.
@@ -1316,6 +1379,7 @@ and top referrers for the last 7 days."`,
 				countries: { title: "Country Breakdown", rows: this.countries },
 				devices: { title: "Device Types", rows: this.devices },
 				browsers: { title: "Browsers", rows: this.browsers },
+				os: { title: "Operating Systems", rows: this.os },
 				events: { title: "Custom Events", rows: this.customEvents },
 			};
 			const entry = map[kind];
@@ -1349,6 +1413,57 @@ and top referrers for the last 7 days."`,
 
 		closeEventDetail() {
 			this.eventDetailOpen = false;
+		},
+
+		// ---- country drill-down ------------------------------------------
+
+		// Opens the country detail modal and fetches its data fresh —
+		// unlike event detail (whose data already sits in customEvents),
+		// this is a new query scoped by country + the current date range,
+		// so there's nothing to show until the fetch resolves.
+		async openCountryDetail(row) {
+			const code = row.code || row.value;
+			if (!code) return;
+
+			this.countryDetail = null;
+			this.countryDetailLoading = true;
+			this.countryDetailOpen = true;
+			this.expandedCountryPage = null;
+
+			const data = await this.fetchJSON(
+				`/api/stats/country-detail?country=${encodeURIComponent(code)}&${this.dateRangeParams()}`
+			);
+
+			// The person may have closed the modal (or opened a different
+			// country) before this resolved — don't clobber whatever's
+			// current with a stale response.
+			if (!this.countryDetailOpen) return;
+
+			this.countryDetail = data;
+			this.countryDetailLoading = false;
+		},
+
+		// Same drill-down, but entered from inside the shared "View All"
+		// modal rather than the main Overview list — see
+		// openEventDetailFromModal's comment for why the outer modal
+		// closes first.
+		openCountryDetailFromModal(row) {
+			this.closeModal();
+			this.openCountryDetail(row);
+		},
+
+		closeCountryDetail() {
+			this.countryDetailOpen = false;
+			this.countryDetail = null;
+			this.countryDetailLoading = false;
+			this.expandedCountryPage = null;
+		},
+
+		// Toggles the time-on-page detail row for one page in the country
+		// modal's Pages Visited list — only one open at a time, click
+		// again (or click a different page) to switch/collapse.
+		toggleCountryPage(path) {
+			this.expandedCountryPage = this.expandedCountryPage === path ? null : path;
 		},
 
 		// Converts one property's raw breakdown ([{value,count}, ...]) into

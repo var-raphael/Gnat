@@ -249,7 +249,7 @@
 		<!-- visitors over time + traffic sources, side by side -->
 		<div class="gnat-duo">
 			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Visitor counts plotted across the selected date range, so you can spot spikes, dips, and daily patterns at a glance.">
-				<h2 class="gnat-section-title">Visitors Over Time</h2>
+				<h2 class="gnat-section-title">Unique Visitors Over Time</h2>
 				<div class="chart-wrap">
 					<canvas id="visitors-chart"></canvas>
 				</div>
@@ -323,7 +323,7 @@
 					<p class="gnat-empty">No data yet</p>
 				</template>
 				<template x-for="row in countries.slice(0, 5)" :key="row.code">
-					<div class="breakdown-row">
+					<div class="breakdown-row breakdown-row-clickable" @click="openCountryDetail(row)">
 						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
 						<span class="breakdown-row-icon flag-icon">
 							<img :src="countryFlagUrl(row.code)" :alt="row.name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
@@ -368,6 +368,25 @@
 					<div class="breakdown-row">
 						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
 						<span class="breakdown-row-icon"><i :class="browserIcon(row.name)" :style="`color: ${browserColor(row.name)}`"></i></span>
+						<span class="breakdown-row-label" x-text="row.name"></span>
+						<span class="breakdown-row-count" x-text="row.count"></span>
+					</div>
+				</template>
+			</div>
+
+			<!-- os -->
+			<div class="gnat-section gnat-panel" tabindex="0" data-tooltip="Visits broken down by the operating system visitors used to access your site.">
+				<div class="gnat-section-head">
+					<h2 class="gnat-section-title">Operating Systems</h2>
+					<button class="view-all-btn" @click="openModal('os')" x-show="os.length > 0">View All ›</button>
+				</div>
+				<template x-if="os.length === 0">
+					<p class="gnat-empty">No data yet</p>
+				</template>
+				<template x-for="row in os.slice(0, 5)" :key="row.name">
+					<div class="breakdown-row">
+						<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+						<span class="breakdown-row-icon"><i :class="osIcon(row.name)" :style="`color: ${osColor(row.name)}`"></i></span>
 						<span class="breakdown-row-label" x-text="row.name"></span>
 						<span class="breakdown-row-count" x-text="row.count"></span>
 					</div>
@@ -631,9 +650,7 @@ and top referrers for the last 7 days."</code></pre>
 					multi-service stack, no per-language SDKs. Any backend just POSTs JSON.
 				</p>
 				<p class="about-body">
-					Most self-hosted analytics tools force a tradeoff. GoatCounter is simple to
-					run but light on features. Plausible and PostHog are feature-rich but need a
-					stack of services to operate. Gnat aims to combine the deployment simplicity
+					Most self-hosted analytics tools force a tradeoff. Gnat aims to combine the deployment simplicity
 					of a single binary with real analytics depth, plus an AI-native layer that
 					none of the others offer yet: funnels, cohorts, retention curves,
 					auto-discovered path analysis, and a built-in MCP server so AI agents can
@@ -721,7 +738,11 @@ and top referrers for the last 7 days."</code></pre>
 			</div>
 			<div class="modal-body">
 				<template x-for="row in modalRows" :key="row.code || row.label || row.type || row.name">
-					<div class="breakdown-row" :class="modalKind === 'events' && 'breakdown-row-clickable'" @click="modalKind === 'events' && openEventDetailFromModal(row)">
+					<div
+						class="breakdown-row"
+						:class="(modalKind === 'events' || modalKind === 'countries') && 'breakdown-row-clickable'"
+						@click="modalKind === 'events' ? openEventDetailFromModal(row) : (modalKind === 'countries' ? openCountryDetailFromModal(row) : null)"
+					>
 						<template x-if="modalKind === 'countries'">
 							<span class="breakdown-row-icon flag-icon">
 								<img :src="countryFlagUrl(row.code)" :alt="row.name" class="flag-img" loading="lazy" @error="$el.style.display='none'; $el.nextElementSibling.style.display='inline'" />
@@ -733,6 +754,9 @@ and top referrers for the last 7 days."</code></pre>
 						</template>
 						<template x-if="modalKind === 'browsers'">
 							<span class="breakdown-row-icon"><i :class="browserIcon(row.name)" :style="`color: ${browserColor(row.name)}`"></i></span>
+						</template>
+						<template x-if="modalKind === 'os'">
+							<span class="breakdown-row-icon"><i :class="osIcon(row.name)" :style="`color: ${osColor(row.name)}`"></i></span>
 						</template>
 						<template x-if="modalKind === 'referrers'">
 							<span class="breakdown-row-icon" :class="{ 'brand-badge-wrap': referrerIsBadge(row) }"><i :class="[referrerIcon(row), { 'brand-badge': referrerIsBadge(row) }]" :style="referrerIsBadge(row) ? '' : `color: ${referrerColor(row)}`"></i></span>
@@ -888,6 +912,123 @@ and top referrers for the last 7 days."</code></pre>
 								<span class="breakdown-row-count" x-text="item.count"></span>
 							</div>
 						</template>
+					</div>
+				</template>
+			</div>
+		</div>
+	</div>
+
+	<!-- country drill-down: time, devices, browsers, os, pages for one country -->
+	<div class="modal-backdrop" x-show="countryDetailOpen" x-cloak @click.self="closeCountryDetail()" @keydown.escape.window="closeCountryDetail()">
+		<div class="modal-panel" x-show="countryDetailOpen" x-transition>
+			<div class="modal-head">
+				<span class="modal-title">
+					<span x-show="countryDetail" x-text="(countryInfo[countryDetail?.country] && countryInfo[countryDetail?.country].name) || countryDetail?.country"></span>
+					<span x-show="!countryDetail && countryDetailLoading">Loading…</span>
+				</span>
+				<button class="modal-close" @click="closeCountryDetail()" aria-label="Close">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="18" y1="6" x2="6" y2="18"/>
+						<line x1="6" y1="6" x2="18" y2="18"/>
+					</svg>
+				</button>
+			</div>
+			<div class="modal-body">
+				<template x-if="countryDetailLoading">
+					<p class="gnat-empty">Loading…</p>
+				</template>
+
+				<template x-if="!countryDetailLoading && countryDetail">
+					<div>
+						<!-- time -->
+						<div class="event-detail-property">
+							<h3 class="event-detail-property-name">Visit Times</h3>
+							<template x-if="!countryDetail.time || countryDetail.time.length === 0">
+								<p class="gnat-empty">No visits recorded for this country in range</p>
+							</template>
+							<template x-for="(point, idx) in (countryDetail.time || [])" :key="point.label + idx">
+								<div class="breakdown-row">
+									<span class="breakdown-row-icon"><i class="fa-solid fa-clock" style="color:#5aa9a3"></i></span>
+									<span class="breakdown-row-label" x-text="point.label"></span>
+								</div>
+							</template>
+						</div>
+
+						<!-- devices -->
+						<div class="event-detail-property">
+							<h3 class="event-detail-property-name">Devices</h3>
+							<template x-if="!countryDetail.devices || countryDetail.devices.length === 0">
+								<p class="gnat-empty">No data</p>
+							</template>
+							<template x-for="row in countryDetail.devices || []" :key="row.value">
+								<div class="breakdown-row">
+									<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+									<span class="breakdown-row-icon"><i :class="deviceIcon(row.value)" :style="`color: ${deviceColor(row.value)}`"></i></span>
+									<span class="breakdown-row-label" x-text="row.value"></span>
+									<span class="breakdown-row-count" x-text="row.count"></span>
+								</div>
+							</template>
+						</div>
+
+						<!-- browsers -->
+						<div class="event-detail-property">
+							<h3 class="event-detail-property-name">Browsers</h3>
+							<template x-if="!countryDetail.browsers || countryDetail.browsers.length === 0">
+								<p class="gnat-empty">No data</p>
+							</template>
+							<template x-for="row in countryDetail.browsers || []" :key="row.value">
+								<div class="breakdown-row">
+									<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+									<span class="breakdown-row-icon"><i :class="browserIcon(row.value)" :style="`color: ${browserColor(row.value)}`"></i></span>
+									<span class="breakdown-row-label" x-text="row.value"></span>
+									<span class="breakdown-row-count" x-text="row.count"></span>
+								</div>
+							</template>
+						</div>
+
+						<!-- os -->
+						<div class="event-detail-property">
+							<h3 class="event-detail-property-name">Operating Systems</h3>
+							<template x-if="!countryDetail.os || countryDetail.os.length === 0">
+								<p class="gnat-empty">No data</p>
+							</template>
+							<template x-for="row in countryDetail.os || []" :key="row.value">
+								<div class="breakdown-row">
+									<div class="breakdown-row-bar" :style="`width: ${row.pct}%`"></div>
+									<span class="breakdown-row-icon"><i :class="osIcon(row.value)" :style="`color: ${osColor(row.value)}`"></i></span>
+									<span class="breakdown-row-label" x-text="row.value"></span>
+									<span class="breakdown-row-count" x-text="row.count"></span>
+								</div>
+							</template>
+						</div>
+
+						<!-- pages + avg time on page -->
+						<div class="event-detail-property">
+							<h3 class="event-detail-property-name">Pages Visited</h3>
+							<template x-if="!countryDetail.pages || countryDetail.pages.length === 0">
+								<p class="gnat-empty">No page data</p>
+							</template>
+							<template x-for="page in toBreakdownRows(countryDetail.pages || [], 'path', 'views')" :key="page.path">
+								<div class="page-row-wrap">
+									<div class="breakdown-row breakdown-row-clickable" @click="toggleCountryPage(page.path)">
+										<div class="breakdown-row-bar" :style="`width: ${page.pct}%`"></div>
+										<span class="breakdown-row-label" x-text="page.path"></span>
+										<span class="breakdown-row-count" x-text="page.views + ' views'"></span>
+										<i class="fa-solid fa-chevron-right event-row-chevron" :style="expandedCountryPage === page.path ? 'transform: rotate(90deg)' : ''"></i>
+									</div>
+									<template x-if="expandedCountryPage === page.path">
+										<div class="page-time-detail">
+											<template x-if="page.avg_time_on_page_seconds > 0">
+												<span>Avg. time on page: <strong x-text="Math.round(page.avg_time_on_page_seconds) + 's'"></strong></span>
+											</template>
+											<template x-if="!page.avg_time_on_page_seconds || page.avg_time_on_page_seconds === 0">
+												<span class="gnat-empty" style="padding:0;">No time-on-page data recorded for this page yet</span>
+											</template>
+										</div>
+									</template>
+								</div>
+							</template>
+						</div>
 					</div>
 				</template>
 			</div>

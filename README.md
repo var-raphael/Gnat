@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#quickstart">Quickstart</a> ·
+  <a href="#usage">Usage</a> ·
   <a href="#features">Features</a> ·
   <a href="#why-gnat">Why Gnat</a> ·
   <a href="#configuration">Configuration</a> ·
@@ -19,15 +19,123 @@
 
 ---
 
-Gnat is a single lightweight Go binary for self-hosted, privacy-first web analytics. Download it, set a few environment variables, run it. No Docker, no multi-service stack, no per-language SDKs. Any backend just POSTs JSON to one endpoint.
+Gnat is a single Go binary for self-hosted web analytics. No Docker, no multi-service stack, no per-language SDKs.
 
 ## Why Gnat
 
-Most self-hosted analytics tools force a tradeoff. GoatCounter is simple to run but light on features. Plausible and PostHog are feature-rich but need a stack of services to operate. Gnat is my attempt to combine the deployment simplicity of a single binary with real analytics depth, plus an AI-native layer that none of the others offer yet.
-
-I built it because I wanted something I could point at any of my own sites, run as one process on one small box, and never think about again, without giving up funnels, retention, and path analysis just to get that simplicity. The AI/MCP layer came out of the same instinct: I wanted to be able to ask my own analytics questions in plain language instead of building a new chart every time I had a new question.
+Existing self-hosted tools force a tradeoff. Gnat aims for analytical depth in a single binary, plus an MCP layer for querying analytics via AI agents.
 
 Gnat is built for one site per instance, matching the single-binary model. Features that only make sense once a team or several properties are involved (multi-site management, SSO, audit logs) are tracked separately on the roadmap rather than bolted onto the core tool.
+
+## Usage
+
+### Step 1: Get the binary
+
+Pick one.
+
+**Option A: Download a release (fastest, no Go toolchain needed)**
+
+Grab the archive for your platform from the [Releases page](https://github.com/var-raphael/Gnat/releases), then extract it:
+
+```bash
+tar xzf gnat-vX.Y.Z-linux-amd64.tar.gz
+cd gnat-vX.Y.Z-linux-amd64
+chmod +x gnat
+```
+
+Windows users can extract the `.zip` instead, `chmod` is not needed there. Each archive includes the `gnat` binary itself plus `README.md` and `LICENSE`, nothing else to install.
+
+**Option B: Build from source**
+
+Requires Go 1.26 or newer.
+
+```bash
+git clone https://github.com/var-raphael/gnat.git
+cd gnat
+go build -o gnat ./cmd/gnat
+```
+
+Either path produces the same single `gnat` binary. The dashboard's HTML, CSS, and JS are compiled directly into it, so nothing else needs to sit next to it on disk.
+
+### Step 2: Configure it
+
+Gnat is configured entirely through environment variables, no config file. Create a `.env` file next to the binary, it is loaded automatically on startup:
+
+```bash
+# --- Database (sqlite is the default, zero setup required) ---
+GNAT_DB_DRIVER=sqlite
+GNAT_DB_PATH=./analytics.db
+
+# --- Required secrets, generate your own random values for these ---
+GNAT_API_KEY=generate-a-random-secret-here
+GNAT_DASHBOARD_PASSWORD=another-random-secret
+
+# --- The one site this instance tracks. This is the domain of the
+# site sending events (e.g. your portfolio, your app), not the domain
+# gnat itself is hosted on. Gnat supports a single site per instance
+# right now; multi-site support is planned but not yet available. ---
+GNAT_SITES=example.com
+
+# --- Where gnat itself is reachable. Used for links the dashboard
+# generates. This is gnat's own domain, separate from GNAT_SITES
+# above, they are often different hosts (e.g. gnat runs on
+# gnat.onrender.com while GNAT_SITES is your-portfolio.com). ---
+GNAT_PUBLIC_URL=http://localhost:8080
+
+# --- Optional, default shown ---
+GNAT_BIND_PORT=8080
+```
+
+`GNAT_BIND_PORT` can usually be left out entirely. Gnat also reads the platform-standard `PORT` variable if it is set, which most hosts (Render, Heroku, Railway) inject automatically, so it binds to the right port with no extra configuration on those platforms.
+
+See the [Configuration](#configuration) section below for every available variable, including Postgres and MySQL setup.
+
+### Step 3: Run it
+
+```bash
+./gnat
+```
+
+You should see a line like:
+
+```
+gnat starting on :8080 (db: sqlite, sites: [example.com])
+```
+
+Visit `http://localhost:8080` (or your `GNAT_PUBLIC_URL`), it redirects straight to `/dashboard`. Log in with `GNAT_DASHBOARD_PASSWORD`.
+
+### Step 4: Add the tracker to your site
+
+Add one script tag before the closing `</body>` on any page you want tracked, using the same `GNAT_API_KEY` from your `.env`:
+
+```html
+<script
+  src="https://your-gnat-domain.com/tracker.js"
+  data-site-key="your-GNAT_API_KEY-here"
+></script>
+```
+
+For a Next.js site using `next/script`:
+
+```tsx
+<Script
+  src="https://your-gnat-domain.com/tracker.js"
+  data-site-key="your-GNAT_API_KEY-here"
+  strategy="afterInteractive"
+/>
+```
+
+That is the entire integration. Pageviews are sent automatically. To track custom events (button clicks, signups, whatever matters to you), call `window.gnat.track(eventName, properties)` from anywhere on the page after the script has loaded:
+
+```js
+window.gnat.track("signup_completed", { plan: "pro" });
+```
+
+The site sending events must match `GNAT_SITES` on the server exactly, or ingestion is silently rejected.
+
+### Step 5: Check the dashboard
+
+Back on `/dashboard`, Top Pages, Custom Events, and Live Visitors should reflect what you just sent within a few seconds. Referrer and country data depend on real distinct visitors and real navigation, they will look empty during local/manual testing and fill in once real traffic arrives.
 
 ## Features
 
@@ -38,44 +146,31 @@ Gnat is built for one site per instance, matching the single-binary model. Featu
 - **Built-in MCP server.** AI agents and assistants can query your analytics directly, no separate export or import step.
 - **CSV, JSON, and raw SQL export.** It is your data, in a format you can actually use elsewhere.
 
-## Quickstart
+## Configuration
 
-Requires Go 1.26 or newer.
+Every setting is an environment variable. There is no YAML or JSON config file, secrets and settings live in one place rather than split across a file and overrides.
 
-```bash
-git clone https://github.com/var-raphael/gnat.git
-cd gnat
-go build ./cmd/gnat
-```
+| Variable | Default | Notes |
+|---|---|---|
+| `GNAT_BIND_PORT` | `8080` | Port the HTTP server listens on. `PORT` is checked first if set, so most PaaS hosts need no port configuration at all |
+| `GNAT_PUBLIC_URL` | `http://localhost:8080` | The domain gnat itself is reachable at, used for links generated by the dashboard. Separate from `GNAT_SITES` |
+| `GNAT_DB_DRIVER` | `sqlite` | `sqlite`, `postgres`, or `mysql` |
+| `GNAT_DB_PATH` | `./analytics.db` | SQLite only |
+| `GNAT_DB_HOST` | none | Postgres/MySQL only |
+| `GNAT_DB_PORT` | driver default | Postgres/MySQL only |
+| `GNAT_DB_USER` | none | Postgres/MySQL only |
+| `GNAT_DB_PASSWORD` | none | Postgres/MySQL only |
+| `GNAT_DB_NAME` | none | Postgres/MySQL only |
+| `GNAT_DB_SSLMODE` | `disable` | Postgres only |
+| `GNAT_API_KEY` | required | Authorizes writes to `/api/event`, also the `data-site-key` value the tracker script uses |
+| `GNAT_DASHBOARD_PASSWORD` | required | Gates the dashboard and all `/api/stats` and `/api/export` endpoints |
+| `GNAT_SITES` | required | The single domain this instance tracks. Multi-site is planned but not yet supported |
 
-Gnat is configured entirely through environment variables, no config file. The quickest way to run it locally is a `.env` file in the project root, loaded automatically on startup:
+`GNAT_API_KEY` protects the ingest endpoint only. `GNAT_DASHBOARD_PASSWORD` protects everything else, including reads. They are deliberately independent so rotating one never affects the other.
 
-```bash
-# --- Server ---
-GNAT_BIND_PORT=8080
-GNAT_PUBLIC_URL=http://localhost:8080
+### Sending events without the tracker script
 
-# --- Database (sqlite is the default, zero setup required) ---
-GNAT_DB_DRIVER=sqlite
-GNAT_DB_PATH=./analytics.db
-
-# --- Required secrets ---
-GNAT_API_KEY=generate-a-random-secret-here
-GNAT_DASHBOARD_PASSWORD=another-random-secret
-GNAT_SITES=example.com
-```
-
-Then run it:
-
-```bash
-go run ./cmd/gnat
-```
-
-The dashboard is served at `GNAT_PUBLIC_URL` (default `http://localhost:8080/dashboard`), gated by `GNAT_DASHBOARD_PASSWORD`.
-
-### Sending events
-
-Point any backend at `/api/event` with your ingest key:
+Any backend can POST directly to `/api/event` instead of using `tracker.js`, useful for server-side events or non-browser clients:
 
 ```bash
 curl -X POST http://localhost:8080/api/event \
@@ -89,29 +184,7 @@ curl -X POST http://localhost:8080/api/event \
   }'
 ```
 
-The `Origin` header must match a domain listed in `GNAT_SITES`, or the event is silently dropped. This is the same allowlist model used to prevent random third parties from writing to your instance even if they somehow obtain the ingest key.
-
-## Configuration
-
-Every setting is an environment variable. There is no YAML or JSON config file, secrets and settings live in one place rather than split across a file and overrides.
-
-| Variable | Default | Notes |
-|---|---|---|
-| `GNAT_BIND_PORT` | `8080` | Port the HTTP server listens on |
-| `GNAT_PUBLIC_URL` | `http://localhost:8080` | Used for links generated by the dashboard |
-| `GNAT_DB_DRIVER` | `sqlite` | `sqlite`, `postgres`, or `mysql` |
-| `GNAT_DB_PATH` | `./analytics.db` | SQLite only |
-| `GNAT_DB_HOST` | none | Postgres/MySQL only |
-| `GNAT_DB_PORT` | driver default | Postgres/MySQL only |
-| `GNAT_DB_USER` | none | Postgres/MySQL only |
-| `GNAT_DB_PASSWORD` | none | Postgres/MySQL only |
-| `GNAT_DB_NAME` | none | Postgres/MySQL only |
-| `GNAT_DB_SSLMODE` | `disable` | Postgres only |
-| `GNAT_API_KEY` | required | Authorizes writes to `/api/event` |
-| `GNAT_DASHBOARD_PASSWORD` | required | Gates the dashboard and all `/api/stats` and `/api/export` endpoints |
-| `GNAT_SITES` | required | Comma-separated allowlist of origins permitted to send events |
-
-`GNAT_API_KEY` protects the ingest endpoint only. `GNAT_DASHBOARD_PASSWORD` protects everything else, including reads. They are deliberately independent so rotating one never affects the other.
+The `Origin` header must match `GNAT_SITES` exactly, or the event is silently dropped. This is the same allowlist check the tracker script relies on, meant to prevent random third parties from writing events even if they obtain the ingest key.
 
 ## Architecture
 

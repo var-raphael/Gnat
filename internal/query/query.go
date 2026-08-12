@@ -10,7 +10,10 @@ import (
 	"github.com/var-raphael/gnat/internal/dialect"
 )
 
-// PageviewPoint is one bucket in the pageviews-over-time series.
+// PageviewPoint is one bucket in the visitors-over-time series
+// (despite the type name — kept for backwards API compatibility with
+// the JSON field names existing consumers already rely on). Count is
+// unique visitors per bucket, not raw pageviews.
 type PageviewPoint struct {
 	Date  string `json:"date"`
 	Count int64  `json:"count"`
@@ -45,8 +48,11 @@ func PageviewsHandler(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// GetPageviewsOverTime returns pageview counts between from and to
-// (inclusive), with zero-count buckets filled in rather than omitted.
+// GetPageviewsOverTime returns unique-visitor counts between from and
+// to (inclusive), with zero-count buckets filled in rather than
+// omitted. Named around "pageviews" for historical/API-compat
+// reasons, but counts distinct visitors — the frontend chart is
+// titled "Visitors Over Time".
 //
 // When from and to fall on the same calendar day, a daily bucketing
 // would produce a single point — not a useful graph — so it buckets
@@ -64,25 +70,31 @@ func isSameCalendarDay(from, to time.Time) bool {
 }
 
 func getPageviewsByDay(db *gorm.DB, from, to time.Time) ([]PageviewPoint, error) {
-	var results []PageviewPoint
-
-	// Grouped by calendar day via dialect.DateTrunc, the one seam
-	// isolated per internal/dialect's package doc — everything else
-	// in this query is portable GORM as-is.
+	// Each visitor counts once, in the bucket of their first pageview
+	// within the range — not once per bucket they happened to be
+	// active in. A visitor active on both Monday and Wednesday should
+	// only add to Monday's bar, or the bars wouldn't sum to the
+	// range's true unique-visitor total (see GetPageviewsOverTime).
+	//
+	// dialect.DateTrunc is the seam that keeps this portable — the
+	// rest is plain GORM/SQL.
 	dateExpr := dialect.DateTrunc(db.Dialector.Name(), "timestamp")
+	var raw []struct {
+		DistinctID string
+		FirstSeen  string
+	}
 	err := db.Table("events").
-		Select(dateExpr + " as date, count(*) as count").
+		Select("distinct_id, MIN("+dateExpr+") as first_seen").
 		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
-		Group("date").
-		Order("date").
-		Scan(&results).Error
+		Group("distinct_id").
+		Scan(&raw).Error
 	if err != nil {
 		return nil, err
 	}
 
-	byDate := make(map[string]int64, len(results))
-	for _, r := range results {
-		byDate[r.Date] = r.Count
+	byDate := make(map[string]int64, len(raw))
+	for _, r := range raw {
+		byDate[r.FirstSeen]++
 	}
 
 	filled := make([]PageviewPoint, 0)
@@ -94,26 +106,29 @@ func getPageviewsByDay(db *gorm.DB, from, to time.Time) ([]PageviewPoint, error)
 	return filled, nil
 }
 
-// getPageviewsByHour buckets a single day's pageviews by hour, e.g.
+// getPageviewsByHour buckets a single day's unique visitors by the
+// hour of their first pageview that day — same first-occurrence
+// principle as getPageviewsByDay, just at hourly granularity. Used
 // for a "today only" or any single-date from/to selection where a
 // daily bucket would otherwise collapse to one point.
 func getPageviewsByHour(db *gorm.DB, from, to time.Time) ([]PageviewPoint, error) {
-	var results []PageviewPoint
-
 	hourExpr := dialect.HourTrunc(db.Dialector.Name(), "timestamp")
+	var raw []struct {
+		DistinctID string
+		FirstSeen  string
+	}
 	err := db.Table("events").
-		Select(hourExpr + " as date, count(*) as count").
+		Select("distinct_id, MIN("+hourExpr+") as first_seen").
 		Where("event_name = ? AND timestamp BETWEEN ? AND ?", "pageview", from, to).
-		Group("date").
-		Order("date").
-		Scan(&results).Error
+		Group("distinct_id").
+		Scan(&raw).Error
 	if err != nil {
 		return nil, err
 	}
 
-	byHour := make(map[string]int64, len(results))
-	for _, r := range results {
-		byHour[r.Date] = r.Count
+	byHour := make(map[string]int64, len(raw))
+	for _, r := range raw {
+		byHour[r.FirstSeen]++
 	}
 
 	filled := make([]PageviewPoint, 0, 24)

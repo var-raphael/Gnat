@@ -1344,6 +1344,35 @@ body {
 	font-size: 11px;
 	margin-left: 4px;
 	flex-shrink: 0;
+	transition: transform 0.15s ease;
+}
+
+/* expandable time-on-page panel under a Pages Visited row in the
+   country drill-down modal (see toggleCountryPage) */
+.page-time-detail {
+	padding: 8px 0 10px 4px;
+	margin-left: 4px;
+	font-size: 13px;
+	color: var(--fg-muted);
+}
+.page-time-detail strong {
+	color: var(--fg);
+	font-weight: 600;
+}
+
+/* Pages Visited rows are wrapped in their own div (to hold the
+   expandable time-on-page panel), so :last-child on .breakdown-row no
+   longer identifies the true last row — every wrapper's row would be
+   "last" within its own wrapper. Border the wrapper directly instead,
+   and let its own row not draw a border of its own. */
+.page-row-wrap {
+	border-bottom: 1px solid var(--border);
+}
+.page-row-wrap:last-child {
+	border-bottom: none;
+}
+.page-row-wrap .breakdown-row {
+	border-bottom: none;
 }
 
 /* ---------------------------------------------------------------------
