@@ -650,7 +650,9 @@ and top referrers for the last 7 days."</code></pre>
 					multi-service stack, no per-language SDKs. Any backend just POSTs JSON.
 				</p>
 				<p class="about-body">
-					Most self-hosted analytics tools force a tradeoff. Gnat aims to combine the deployment simplicity
+					Most self-hosted analytics tools force a tradeoff. GoatCounter is simple to
+					run but light on features. Plausible and PostHog are feature-rich but need a
+					stack of services to operate. Gnat aims to combine the deployment simplicity
 					of a single binary with real analytics depth, plus an AI-native layer that
 					none of the others offer yet: funnels, cohorts, retention curves,
 					auto-discovered path analysis, and a built-in MCP server so AI agents can
@@ -1002,7 +1004,7 @@ and top referrers for the last 7 days."</code></pre>
 							</template>
 						</div>
 
-						<!-- pages + avg time on page -->
+						<!-- pages + individual visit durations -->
 						<div class="event-detail-property">
 							<h3 class="event-detail-property-name">Pages Visited</h3>
 							<template x-if="!countryDetail.pages || countryDetail.pages.length === 0">
@@ -1018,10 +1020,15 @@ and top referrers for the last 7 days."</code></pre>
 									</div>
 									<template x-if="expandedCountryPage === page.path">
 										<div class="page-time-detail">
-											<template x-if="page.avg_time_on_page_seconds > 0">
-												<span>Avg. time on page: <strong x-text="Math.round(page.avg_time_on_page_seconds) + 's'"></strong></span>
+											<template x-if="page.visits && page.visits.length > 0">
+												<template x-for="visit in page.visits" :key="visit.distinct_id + visit.timestamp">
+													<div class="page-visit-row">
+														<span class="page-visit-time" x-text="visit.timestamp"></span>
+														<span class="page-visit-duration" x-text="Math.round(visit.timespent_seconds) + 's'"></span>
+													</div>
+												</template>
 											</template>
-											<template x-if="!page.avg_time_on_page_seconds || page.avg_time_on_page_seconds === 0">
+											<template x-if="!page.visits || page.visits.length === 0">
 												<span class="gnat-empty" style="padding:0;">No time-on-page data recorded for this page yet</span>
 											</template>
 										</div>

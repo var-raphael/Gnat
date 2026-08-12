@@ -27,15 +27,23 @@ type CountryDimensionPoint struct {
 	Pct   float64 `json:"pct"`
 }
 
+// CountryPageVisit is one specific visitor's actual time spent on a
+// page — the real, individual duration from that one pageview_end
+// event, not blended into an average with anyone else's visit.
+type CountryPageVisit struct {
+	DistinctID    string  `json:"distinct_id"`
+	Timestamp     string  `json:"timestamp"`
+	TimespentSecs float64 `json:"timespent_seconds"`
+}
+
 // CountryPagePoint is one page visited by visitors from a single
-// country: how many times it was viewed, and the average real engaged
-// time spent on it (from the tracker's pageview_end.timespent field —
-// see countryPageBreakdown's doc comment for why this is the
-// authoritative figure rather than an estimate).
+// country: how many times it was viewed, and each individual visit's
+// actual time spent (see countryPageBreakdown's doc comment for why
+// this is real per-visit data rather than a blended average).
 type CountryPagePoint struct {
-	Path          string  `json:"path"`
-	Views         int64   `json:"views"`
-	AvgTimeOnPage float64 `json:"avg_time_on_page_seconds"`
+	Path   string             `json:"path"`
+	Views  int64              `json:"views"`
+	Visits []CountryPageVisit `json:"visits"`
 }
 
 // CountryDetail is everything the country drill-down modal shows for
@@ -195,19 +203,22 @@ func countryDimensionBreakdown(db *gorm.DB, from, to time.Time, country, column 
 	return points, nil
 }
 
-// countryPageBreakdown pairs each page's view count with its average
-// real engaged time, scoped to one country.
+// countryPageBreakdown pairs each page's view count with the actual
+// list of individual visits and their real engaged time, scoped to
+// one country.
 //
-// View counts come from pageview events. Time-on-page comes from a
+// View counts come from pageview events. Per-visit time comes from a
 // separate event, pageview_end, which the tracker fires on navigation
 // or tab close with a `timespent` property — actual measured engaged
 // time (mouse/scroll/keypress activity, excluding idle time and
-// background tabs), not a gap-between-events estimate. This is the
-// only place in the codebase that reads pageview_end/timespent; every
-// other "time on page" figure elsewhere (see avgTimeOnPage in
-// statssummary.go) still uses the older gap-based estimate, which
-// remains unchanged — see the country-detail feature's design notes
-// for why this modal uses the more precise source instead.
+// background tabs), not a gap-between-events estimate. Each visit is
+// listed individually rather than blended into a page-wide average —
+// one visitor spending 90s and another spending 10s on the same page
+// is two different, real numbers, not one number that represents
+// neither of them. This is the only place in the codebase that reads
+// pageview_end/timespent; every other "time on page" figure elsewhere
+// (see avgTimeOnPage in statssummary.go) still uses the older
+// gap-based estimate, which remains unchanged.
 func countryPageBreakdown(db *gorm.DB, from, to time.Time, country string) ([]CountryPagePoint, error) {
 	pathExpr := dialect.JSONExtract(db.Dialector.Name(), "properties", "path")
 
@@ -225,26 +236,31 @@ func countryPageBreakdown(db *gorm.DB, from, to time.Time, country string) ([]Co
 	}
 
 	timeExpr := dialect.JSONExtract(db.Dialector.Name(), "properties", "timespent")
-	var timeRows []struct {
-		Path      string
-		Timespent *float64
+	var visitRows []struct {
+		Path       string
+		DistinctID string
+		Timestamp  time.Time
+		Timespent  *float64
 	}
 	err = db.Table("events").
-		Select("COALESCE("+pathExpr+", '') as path, "+timeExpr+" as timespent").
+		Select("COALESCE("+pathExpr+", '') as path, distinct_id, timestamp, "+timeExpr+" as timespent").
 		Where("event_name = ? AND country = ? AND timestamp BETWEEN ? AND ?", "pageview_end", country, from, to).
-		Scan(&timeRows).Error
+		Order("timestamp").
+		Scan(&visitRows).Error
 	if err != nil {
 		return nil, err
 	}
 
-	timeTotals := make(map[string]float64)
-	timeCounts := make(map[string]int)
-	for _, r := range timeRows {
+	visitsByPath := make(map[string][]CountryPageVisit)
+	for _, r := range visitRows {
 		if r.Path == "" || r.Timespent == nil {
 			continue
 		}
-		timeTotals[r.Path] += *r.Timespent
-		timeCounts[r.Path]++
+		visitsByPath[r.Path] = append(visitsByPath[r.Path], CountryPageVisit{
+			DistinctID:    r.DistinctID,
+			Timestamp:     r.Timestamp.Format("2006-01-02 15:04"),
+			TimespentSecs: *r.Timespent,
+		})
 	}
 
 	pages := make([]CountryPagePoint, 0, len(viewRows))
@@ -252,14 +268,10 @@ func countryPageBreakdown(db *gorm.DB, from, to time.Time, country string) ([]Co
 		if row.Path == "" {
 			continue
 		}
-		avg := 0.0
-		if timeCounts[row.Path] > 0 {
-			avg = roundTo2(timeTotals[row.Path] / float64(timeCounts[row.Path]))
-		}
 		pages = append(pages, CountryPagePoint{
-			Path:          row.Path,
-			Views:         row.Views,
-			AvgTimeOnPage: avg,
+			Path:   row.Path,
+			Views:  row.Views,
+			Visits: visitsByPath[row.Path],
 		})
 	}
 

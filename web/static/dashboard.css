@@ -1360,6 +1360,24 @@ body {
 	font-weight: 600;
 }
 
+/* one real, individual visit's duration under an expanded Pages
+   Visited row — see toggleCountryPage and countryPageBreakdown for
+   why these are per-visit numbers, not a blended average */
+.page-visit-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 4px 0;
+}
+.page-visit-time {
+	color: var(--fg-muted);
+}
+.page-visit-duration {
+	color: var(--fg);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
 /* Pages Visited rows are wrapped in their own div (to hold the
    expandable time-on-page panel), so :last-child on .breakdown-row no
    longer identifies the true last row — every wrapper's row would be
