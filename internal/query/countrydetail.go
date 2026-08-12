@@ -257,8 +257,14 @@ func countryPageBreakdown(db *gorm.DB, from, to time.Time, country string) ([]Co
 			continue
 		}
 		visitsByPath[r.Path] = append(visitsByPath[r.Path], CountryPageVisit{
-			DistinctID:    r.DistinctID,
-			Timestamp:     r.Timestamp.Format("2006-01-02 15:04"),
+			DistinctID: r.DistinctID,
+			// Second precision, not minute — this list is specifically
+			// meant to show distinct individual visits, and the tracker
+			// can legitimately fire more than one pageview_end for the
+			// same page within the same minute (rapid route changes,
+			// visibility toggles). Minute precision would make two real,
+			// different visits display identically.
+			Timestamp:     r.Timestamp.Format("2006-01-02 15:04:05"),
 			TimespentSecs: *r.Timespent,
 		})
 	}
