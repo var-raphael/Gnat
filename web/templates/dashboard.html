@@ -620,7 +620,7 @@ and top referrers for the last 7 days."</code></pre>
 				<p class="mcp-footnote">
 					Clients that support custom headers can instead connect to
 					<code x-text="window.location.origin + '/mcp/sse'"></code>
-					with an <code>Authorization: Bearer &lt;token&gt;</code> header — that keeps
+					with an <code>Authorization: Bearer &lt;token&gt;</code> header - that keeps
 					the token out of any URL, logs, or saved config file. Regenerating
 					invalidates every existing connection immediately.
 				</p>
@@ -650,9 +650,7 @@ and top referrers for the last 7 days."</code></pre>
 					multi-service stack, no per-language SDKs. Any backend just POSTs JSON.
 				</p>
 				<p class="about-body">
-					Most self-hosted analytics tools force a tradeoff. GoatCounter is simple to
-					run but light on features. Plausible and PostHog are feature-rich but need a
-					stack of services to operate. Gnat aims to combine the deployment simplicity
+					Most self-hosted analytics tools force a tradeoff. Gnat aims to combine the deployment simplicity
 					of a single binary with real analytics depth, plus an AI-native layer that
 					none of the others offer yet: funnels, cohorts, retention curves,
 					auto-discovered path analysis, and a built-in MCP server so AI agents can
