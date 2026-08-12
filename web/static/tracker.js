@@ -16,6 +16,9 @@
 	}
 
 	var INACTIVITY_THRESHOLD = 30000; // 30s idle = no longer "active"
+	// Max ms credited for any single gap between activity events — see
+	// updateActiveTime's doc comment for why this exists.
+	var ACTIVITY_GAP_CAP = 2000;
 	var currentPath = location.pathname;
 	var activeTime = 0;
 	var lastActivityTime = Date.now();
@@ -90,13 +93,25 @@
 	// --- active time tracking ---
 	// Tracks real engaged time (mouse move, scroll, click, keypress, touch),
 	// not just "tab was open." A background tab does not accumulate time.
-
+	//
+	// Activity is event-driven, not polled — there's no timer firing every
+	// second to check "are they still here." That means the gap between
+	// two activity events (e.g. one mousemove, then silence while reading,
+	// then the next mousemove) is unknown: the person could have been
+	// reading the whole time, or could have wandered off and only nudged
+	// the mouse right at the end. Crediting the *entire* gap as active
+	// time (as long as it's under INACTIVITY_THRESHOLD) overcounts real
+	// engagement — a 12s silent gap followed by one mousemove would add a
+	// full 12s, even though we have no evidence they were engaged for
+	// more than that one instant. ACTIVITY_GAP_CAP bounds how much of any
+	// single gap can be credited, so idle gaps under the inactivity
+	// threshold no longer inflate the total.
 	function updateActiveTime() {
 		if (isActive && document.visibilityState === "visible") {
 			var now = Date.now();
 			var delta = now - lastActivityTime;
-			if (delta > 0 && delta < INACTIVITY_THRESHOLD) {
-				activeTime += delta;
+			if (delta > 0) {
+				activeTime += Math.min(delta, ACTIVITY_GAP_CAP);
 			}
 			lastActivityTime = now;
 		}
@@ -189,6 +204,16 @@
 		if (document.visibilityState === "hidden") {
 			markInactive();
 		} else {
+			// Coming back from a hidden tab is a fresh start, not a
+			// continuation — time spent on another tab must never be
+			// credited to this page. markActive()'s "already active"
+			// branch calls updateActiveTime(), which would otherwise
+			// credit the gap since lastActivityTime was last set
+			// (i.e. before the tab was switched away), even capped at
+			// ACTIVITY_GAP_CAP. Forcing isActive false first makes
+			// markActive() take its "starting fresh" branch instead,
+			// which resets lastActivityTime without crediting anything.
+			isActive = false;
 			markActive();
 		}
 	});
