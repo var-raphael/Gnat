@@ -1,7 +1,9 @@
 package ingest
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -18,8 +20,13 @@ type eventPayload struct {
 	DistinctID string          `json:"distinct_id"`
 	Properties json.RawMessage `json:"properties"`
 	Timestamp  *time.Time      `json:"timestamp"`
+	// APIKey is only ever populated for navigator.sendBeacon requests
+	// (see tracker.js's send()) — sendBeacon can't set custom headers,
+	// so the beacon payload carries the key in the JSON body instead
+	// of X-API-Key. Every other request path (fetch) sends the key as
+	// a header and leaves this empty.
+	APIKey string `json:"api_key"`
 }
-
 
 func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -37,11 +44,21 @@ func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc
 			return
 		}
 
-		if !authorized(r, apiKey) {
+		// Read the body once up front — authorized() needs to inspect it
+		// for beacon requests (see eventPayload.APIKey's doc comment),
+		// and the body can only be read once. bytes.NewReader below lets
+		// the later json.Decode read the same bytes again.
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "failed to read body", http.StatusBadRequest)
+			return
+		}
+		r.Body.Close()
+
+		if !authorized(r, bodyBytes, apiKey) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-
 
 		siteID, ok := resolveSite(db, r)
 		if !ok {
@@ -50,7 +67,7 @@ func Handler(db *gorm.DB, apiKey string, geoClient *geo.Client) http.HandlerFunc
 		}
 
 		var payload eventPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&payload); err != nil {
 			http.Error(w, "invalid json body", http.StatusBadRequest)
 			return
 		}
@@ -144,7 +161,15 @@ func isLoopbackOrPrivate(ip string) bool {
 }
 
 
-func authorized(r *http.Request, apiKey string) bool {
+// authorized checks the request's API key against three places, in
+// order: the X-API-Key header, an Authorization: Bearer header, or —
+// for navigator.sendBeacon requests, which cannot set custom headers
+// — an api_key field in the JSON body itself (see eventPayload.APIKey).
+// Without this third check, every beacon-sent event (pageview_end, in
+// particular — see tracker.js's trackPageviewEnd) is silently rejected
+// with 401 and never stored, since sendBeacon has no way to attach the
+// header the other two checks look for.
+func authorized(r *http.Request, bodyBytes []byte, apiKey string) bool {
 	if key := r.Header.Get("X-API-Key"); key != "" {
 		return key == apiKey
 	}
@@ -153,5 +178,13 @@ func authorized(r *http.Request, apiKey string) bool {
 	if len(auth) > len(prefix) && auth[:len(prefix)] == prefix {
 		return auth[len(prefix):] == apiKey
 	}
+
+	var beacon struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.Unmarshal(bodyBytes, &beacon); err == nil && beacon.APIKey != "" {
+		return beacon.APIKey == apiKey
+	}
+
 	return false
 }
